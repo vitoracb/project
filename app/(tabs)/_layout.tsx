@@ -1,25 +1,65 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
+import { View, TouchableOpacity, Text } from 'react-native';
 import { Chrome as Home, Calendar, DollarSign, FileText, MessageSquare, User } from 'lucide-react-native';
 import Colors from '../../constants/Colors';
 import { Platform } from 'react-native';
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+
+function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  return (
+    <View style={{ flexDirection: 'row', backgroundColor: Colors.background.paper, borderTopColor: Colors.border.light, borderTopWidth: 1, height: Platform.OS === 'ios' ? 88 : 60 }}>
+      {state.routes.map((route, index) => {
+        const { options } = descriptors[route.key];
+        const rawLabel =
+          options.tabBarLabel !== undefined
+            ? options.tabBarLabel
+            : options.title !== undefined
+            ? options.title
+            : route.name;
+        const label = typeof rawLabel === 'string' ? rawLabel : options.title ?? route.name;
+        const isFocused = state.index === index;
+        const onPress = () => {
+          const event = navigation.emit({
+            type: 'tabPress',
+            target: route.key,
+            canPreventDefault: true,
+          });
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name);
+          }
+        };
+        // Ícones
+        let icon = null;
+        if (route.name === 'index') icon = <Home size={24} color={isFocused ? Colors.primary.main : Colors.grey[600]} />;
+        if (route.name === 'activities') icon = <Calendar size={24} color={isFocused ? Colors.primary.main : Colors.grey[600]} />;
+        if (route.name === 'finances') icon = <DollarSign size={24} color={isFocused ? Colors.primary.main : Colors.grey[600]} />;
+        if (route.name === 'documents') icon = <FileText size={24} color={isFocused ? Colors.primary.main : Colors.grey[600]} />;
+        if (route.name === 'comments') icon = <MessageSquare size={24} color={isFocused ? Colors.primary.main : Colors.grey[600]} />;
+        if (!icon) return null; // Oculta tabs sem ícone (ex: profile)
+        return (
+          <TouchableOpacity
+            key={route.key}
+            accessibilityRole="button"
+            accessibilityState={isFocused ? { selected: true } : {}}
+            onPress={onPress}
+            style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 2, paddingBottom: 0 }}
+          >
+            {icon}
+            <Text style={{ color: isFocused ? Colors.primary.main : Colors.grey[600], fontSize: 12, fontWeight: '500', marginTop: 0 }} numberOfLines={1}>
+              {label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors.primary.main,
-        tabBarInactiveTintColor: Colors.grey[600],
-        tabBarStyle: {
-          height: Platform.OS === 'ios' ? 88 : 60,
-          backgroundColor: Colors.background.paper,
-          borderTopColor: Colors.border.light,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '500',
-          marginBottom: Platform.OS === 'ios' ? 0 : 8,
-        },
         headerStyle: {
           backgroundColor: Colors.primary.main,
         },
@@ -28,59 +68,43 @@ export default function TabLayout() {
           fontWeight: 'bold',
         },
       }}
+      tabBar={props => <CustomTabBar {...props} />}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Início',
-          tabBarIcon: ({ color, size }) => (
-            <Home size={size} color={color} />
-          ),
         }}
       />
       <Tabs.Screen
         name="activities"
         options={{
           title: 'Atividades',
-          tabBarIcon: ({ color, size }) => (
-            <Calendar size={size} color={color} />
-          ),
         }}
       />
       <Tabs.Screen
         name="finances"
         options={{
           title: 'Finanças',
-          tabBarIcon: ({ color, size }) => (
-            <DollarSign size={size} color={color} />
-          ),
         }}
       />
       <Tabs.Screen
         name="documents"
         options={{
           title: 'Documentos',
-          tabBarIcon: ({ color, size }) => (
-            <FileText size={size} color={color} />
-          ),
         }}
       />
       <Tabs.Screen
         name="comments"
         options={{
           title: 'Comentários',
-          tabBarIcon: ({ color, size }) => (
-            <MessageSquare size={size} color={color} />
-          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Perfil',
-          tabBarIcon: ({ color, size }) => (
-            <User size={size} color={color} />
-          ),
+          tabBarButton: () => null,
         }}
       />
     </Tabs>

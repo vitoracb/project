@@ -6,9 +6,11 @@ import {
   ScrollView, 
   TouchableOpacity,
   FlatList,
-  Alert
+  Alert,
+  Modal,
+  TextInput
 } from 'react-native';
-import { DollarSign, Filter, Plus, Search, ArrowDown, ArrowUp, Trash2 } from 'lucide-react-native';
+import { DollarSign, Filter, Plus, Search, ArrowDown, ArrowUp, Trash2, X } from 'lucide-react-native';
 
 import Colors from '../../constants/Colors';
 import Spacing, { BorderRadius } from '../../constants/Spacing';
@@ -88,6 +90,75 @@ const MOCK_CASH_FLOW = {
   ],
 };
 
+// Mock data for annual closing
+const MOCK_ANNUAL_DATA = {
+  year: 2023,
+  totalIncome: 168000.0,
+  totalExpense: 107400.0,
+  netProfit: 60600.0,
+  monthlyData: [
+    { month: 'Jan', income: 14000, expense: 9500, profit: 4500 },
+    { month: 'Fev', income: 14000, expense: 8200, profit: 5800 },
+    { month: 'Mar', income: 14000, expense: 10300, profit: 3700 },
+    { month: 'Abr', income: 14000, expense: 7800, profit: 6200 },
+    { month: 'Mai', income: 14000, expense: 9200, profit: 4800 },
+    { month: 'Jun', income: 14000, expense: 8500, profit: 5500 },
+    { month: 'Jul', income: 14000, expense: 8950, profit: 5050 },
+    { month: 'Ago', income: 14000, expense: 9100, profit: 4900 },
+    { month: 'Set', income: 14000, expense: 8800, profit: 5200 },
+    { month: 'Out', income: 14000, expense: 9200, profit: 4800 },
+    { month: 'Nov', income: 14000, expense: 8500, profit: 5500 },
+    { month: 'Dez', income: 14000, expense: 8750, profit: 5250 },
+  ],
+};
+
+type Month = 'Jan' | 'Fev' | 'Mar' | 'Abr' | 'Mai' | 'Jun' | 'Jul' | 'Ago' | 'Set' | 'Out' | 'Nov' | 'Dez';
+
+interface MonthlyPayments {
+  [memberId: string]: {
+    [month in Month]: boolean;
+  };
+}
+
+interface AnnualPayments {
+  [year: number]: MonthlyPayments;
+}
+
+// Mock data for members
+const MEMBERS = [
+  { id: '1', name: 'Vitor e Bárbara' },
+  { id: '2', name: 'Sílvia' },
+  { id: '3', name: 'Lucas e Maeve' },
+  { id: '4', name: 'Dery' },
+  { id: '5', name: 'Kim' },
+  { id: '6', name: 'Ana e Luke' },
+  { id: '7', name: 'Rodrigo' },
+];
+
+// Mock data for monthly payments
+const MOCK_MONTHLY_PAYMENTS: AnnualPayments = {
+  2023: {
+    '1': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: true, Jun: true, Jul: true, Ago: true, Set: true, Out: true, Nov: true, Dez: true },
+    '2': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: true, Jun: true, Jul: true, Ago: true, Set: true, Out: true, Nov: true, Dez: true },
+    '3': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: true, Jun: true, Jul: true, Ago: true, Set: true, Out: true, Nov: true, Dez: true },
+    '4': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: true, Jun: true, Jul: true, Ago: true, Set: true, Out: true, Nov: true, Dez: true },
+    '5': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: true, Jun: true, Jul: true, Ago: true, Set: true, Out: true, Nov: true, Dez: true },
+    '6': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: true, Jun: true, Jul: true, Ago: true, Set: true, Out: true, Nov: true, Dez: true },
+    '7': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: true, Jun: true, Jul: true, Ago: true, Set: true, Out: true, Nov: true, Dez: true },
+  },
+  2024: {
+    '1': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: false, Jun: false, Jul: false, Ago: false, Set: false, Out: false, Nov: false, Dez: false },
+    '2': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: false, Jun: false, Jul: false, Ago: false, Set: false, Out: false, Nov: false, Dez: false },
+    '3': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: false, Jun: false, Jul: false, Ago: false, Set: false, Out: false, Nov: false, Dez: false },
+    '4': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: false, Jun: false, Jul: false, Ago: false, Set: false, Out: false, Nov: false, Dez: false },
+    '5': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: false, Jun: false, Jul: false, Ago: false, Set: false, Out: false, Nov: false, Dez: false },
+    '6': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: false, Jun: false, Jul: false, Ago: false, Set: false, Out: false, Nov: false, Dez: false },
+    '7': { Jan: true, Fev: true, Mar: true, Abr: true, Mai: false, Jun: false, Jul: false, Ago: false, Set: false, Out: false, Nov: false, Dez: false },
+  },
+};
+
+const MONTHS: Month[] = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
 const formatCurrency = (value: number) => {
   return value.toLocaleString('pt-BR', {
     style: 'currency',
@@ -100,14 +171,56 @@ const formatDate = (dateString: string) => {
   return date.toLocaleDateString('pt-BR');
 };
 
-type FinanceTab = 'expenses' | 'payments' | 'cashflow';
+type FinanceTab = 'expenses' | 'payments' | 'cashflow' | 'annual';
 
 export default function FinancesScreen() {
   const [activeTab, setActiveTab] = useState<FinanceTab>('expenses');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedYear, setSelectedYear] = useState(2023);
+  const [selectedYear, setSelectedYear] = useState(2024);
   const [selectedMonth, setSelectedMonth] = useState(7);
   const [expenses, setExpenses] = useState(MOCK_EXPENSES);
+  const [isAddModalVisible, setIsAddModalVisible] = useState(false);
+  const [newExpense, setNewExpense] = useState({
+    description: '',
+    amount: '',
+    date: new Date().toISOString().split('T')[0],
+    category: '',
+  });
+  const [monthlyPayments, setMonthlyPayments] = useState(MOCK_MONTHLY_PAYMENTS);
+
+  // Função utilitária para garantir estrutura do ano
+  function ensureYearStructure(year: number, prev: AnnualPayments): AnnualPayments {
+    if (prev[year]) return prev;
+    const newYear: MonthlyPayments = {};
+    MEMBERS.forEach(member => {
+      newYear[member.id] = {} as { [month in Month]: boolean };
+      MONTHS.forEach(month => {
+        newYear[member.id][month] = false;
+      });
+    });
+    return { ...prev, [year]: newYear };
+  }
+
+  const handleSetYear = (year: number) => {
+    setMonthlyPayments(prev => ensureYearStructure(year, prev));
+    setSelectedYear(year);
+  };
+
+  const handlePaymentToggle = (memberId: string, month: Month) => {
+    setMonthlyPayments(prev => {
+      const safePrev = ensureYearStructure(selectedYear, prev);
+      return {
+        ...safePrev,
+        [selectedYear]: {
+          ...safePrev[selectedYear],
+          [memberId]: {
+            ...safePrev[selectedYear][memberId],
+            [month]: !safePrev[selectedYear][memberId][month]
+          }
+        }
+      };
+    });
+  };
 
   const handleDeleteExpense = (expenseId: string) => {
     Alert.alert(
@@ -129,6 +242,101 @@ export default function FinancesScreen() {
     );
   };
 
+  const handleAddExpense = () => {
+    if (!newExpense.description || !newExpense.amount || !newExpense.category) {
+      Alert.alert('Erro', 'Por favor, preencha todos os campos obrigatórios.');
+      return;
+    }
+
+    const expense = {
+      id: Date.now().toString(),
+      description: newExpense.description,
+      amount: parseFloat(newExpense.amount),
+      date: newExpense.date,
+      category: newExpense.category,
+      receipt: null,
+    };
+
+    setExpenses([expense, ...expenses]);
+    setNewExpense({
+      description: '',
+      amount: '',
+      date: new Date().toISOString().split('T')[0],
+      category: '',
+    });
+    setIsAddModalVisible(false);
+  };
+
+  const renderAddExpenseModal = () => (
+    <Modal
+      visible={isAddModalVisible}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setIsAddModalVisible(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <Card style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Nova Despesa</Text>
+            <TouchableOpacity
+              onPress={() => setIsAddModalVisible(false)}
+              style={styles.closeButton}
+            >
+              <X size={24} color={Colors.text.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.modalBody}>
+            <Input
+              label="Descrição"
+              value={newExpense.description}
+              onChangeText={(text) => setNewExpense({ ...newExpense, description: text })}
+              placeholder="Digite a descrição da despesa"
+            />
+
+            <Input
+              label="Valor"
+              value={newExpense.amount}
+              onChangeText={(text) => setNewExpense({ ...newExpense, amount: text })}
+              placeholder="0,00"
+              keyboardType="numeric"
+              leftIcon={<DollarSign size={20} color={Colors.text.secondary} />}
+            />
+
+            <Input
+              label="Data"
+              value={newExpense.date}
+              onChangeText={(text) => setNewExpense({ ...newExpense, date: text })}
+              placeholder="YYYY-MM-DD"
+            />
+
+            <Input
+              label="Categoria"
+              value={newExpense.category}
+              onChangeText={(text) => setNewExpense({ ...newExpense, category: text })}
+              placeholder="Digite a categoria"
+            />
+          </View>
+
+          <View style={styles.modalFooter}>
+            <Button
+              title="Cancelar"
+              variant="outlined"
+              onPress={() => setIsAddModalVisible(false)}
+              style={styles.modalButton}
+            />
+            <Button
+              title="Adicionar"
+              variant="primary"
+              onPress={handleAddExpense}
+              style={styles.modalButton}
+            />
+          </View>
+        </Card>
+      </View>
+    </Modal>
+  );
+
   const renderExpensesTab = () => {
     return (
       <View style={styles.tabContent}>
@@ -148,7 +356,7 @@ export default function FinancesScreen() {
             variant="primary"
             size="small"
             icon={<Plus size={16} color={Colors.white} />}
-            onPress={() => console.log('Add expense')}
+            onPress={() => setIsAddModalVisible(true)}
           />
         </View>
 
@@ -230,14 +438,14 @@ export default function FinancesScreen() {
         <View style={styles.periodSelector}>
           <View style={styles.yearSelector}>
             <TouchableOpacity 
-              onPress={() => setSelectedYear(selectedYear - 1)}
+              onPress={() => handleSetYear(selectedYear - 1)}
               style={styles.periodControl}
             >
               <ArrowDown size={20} color={Colors.text.primary} />
             </TouchableOpacity>
             <Text style={styles.periodText}>{selectedYear}</Text>
             <TouchableOpacity 
-              onPress={() => setSelectedYear(selectedYear + 1)}
+              onPress={() => handleSetYear(selectedYear + 1)}
               style={styles.periodControl}
             >
               <ArrowUp size={20} color={Colors.text.primary} />
@@ -337,6 +545,85 @@ export default function FinancesScreen() {
     );
   };
 
+  const renderAnnualClosingTab = () => {
+    return (
+      <View style={styles.tabContent}>
+        <Card style={styles.annualSummary}>
+          <View style={styles.yearSelector}>
+            <TouchableOpacity 
+              onPress={() => handleSetYear(selectedYear - 1)}
+              style={styles.yearControl}
+            >
+              <ArrowDown size={20} color={Colors.text.primary} />
+            </TouchableOpacity>
+            <Text style={styles.yearText}>{selectedYear}</Text>
+            <TouchableOpacity 
+              onPress={() => handleSetYear(selectedYear + 1)}
+              style={styles.yearControl}
+            >
+              <ArrowUp size={20} color={Colors.text.primary} />
+            </TouchableOpacity>
+          </View>
+        </Card>
+
+        <Card style={styles.membersTable}>
+          <ScrollView horizontal>
+            <View>
+              <View style={styles.tableHeader}>
+                <View style={[styles.memberCell]}>
+                  <Text style={styles.headerText}>Membro</Text>
+                </View>
+                {MONTHS.map((month) => (
+                  <View key={month} style={[styles.monthCell]}>
+                    <Text style={styles.headerText}>{month}</Text>
+                  </View>
+                ))}
+              </View>
+              <ScrollView>
+                {MEMBERS.map((member) => (
+                  <View key={member.id} style={styles.tableRow}>
+                    <View style={styles.memberCell}>
+                      <Text style={styles.memberName}>{member.name}</Text>
+                    </View>
+                    {MONTHS.map((month) => (
+                      <TouchableOpacity
+                        key={month}
+                        style={[
+                          styles.monthCell,
+                          styles.paymentCell,
+                          monthlyPayments[selectedYear][member.id][month] && styles.paidCell
+                        ]}
+                        onPress={() => handlePaymentToggle(member.id, month)}
+                      >
+                        <Text style={[
+                          styles.paymentText,
+                          monthlyPayments[selectedYear][member.id][month] && styles.paidText
+                        ]}>
+                          {monthlyPayments[selectedYear][member.id][month] ? '✓' : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          </ScrollView>
+        </Card>
+
+        <View style={styles.legendContainer}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendBox, styles.paidCell]} />
+            <Text style={styles.legendText}>Pago</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendBox, styles.unpaidCell]} />
+            <Text style={styles.legendText}>Não Pago</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -384,11 +671,26 @@ export default function FinancesScreen() {
             Fluxo de Caixa
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'annual' && styles.activeTab]}
+          onPress={() => setActiveTab('annual')}
+        >
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'annual' && styles.activeTabText,
+            ]}
+          >
+            Fechamento Anual
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {activeTab === 'expenses' && renderExpensesTab()}
       {activeTab === 'payments' && renderPaymentsTab()}
       {activeTab === 'cashflow' && renderCashFlowTab()}
+      {activeTab === 'annual' && renderAnnualClosingTab()}
+      {renderAddExpenseModal()}
     </View>
   );
 }
@@ -515,9 +817,17 @@ const styles = StyleSheet.create({
   yearSelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background.paper,
-    borderRadius: BorderRadius.s,
+    justifyContent: 'center',
+    marginBottom: Spacing.m,
+  },
+  yearControl: {
     padding: Spacing.s,
+  },
+  yearText: {
+    fontFamily: FontFamily.bold,
+    fontSize: 24,
+    color: Colors.text.primary,
+    marginHorizontal: Spacing.l,
   },
   monthSelector: {
     flexDirection: 'row',
@@ -646,5 +956,146 @@ const styles = StyleSheet.create({
   deleteButton: {
     padding: Spacing.xs,
     marginLeft: Spacing.s,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    padding: Spacing.l,
+  },
+  modalContent: {
+    backgroundColor: Colors.background.paper,
+    borderRadius: BorderRadius.l,
+    padding: Spacing.l,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.l,
+  },
+  modalTitle: {
+    fontFamily: FontFamily.bold,
+    fontSize: 20,
+    color: Colors.text.primary,
+  },
+  closeButton: {
+    padding: Spacing.xs,
+  },
+  modalBody: {
+    marginBottom: Spacing.l,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: Spacing.s,
+  },
+  modalButton: {
+    minWidth: 100,
+  },
+  annualSummary: {
+    marginBottom: Spacing.l,
+  },
+  membersTable: {
+    marginBottom: Spacing.l,
+    borderRadius: BorderRadius.s,
+    overflow: 'hidden',
+  },
+  tableContainer: {
+    width: '100%',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+    backgroundColor: Colors.grey[100],
+  },
+  headerCell: {
+    width: 80,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: Colors.border.light,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+    padding: 0,
+  },
+  headerText: {
+    fontFamily: FontFamily.bold,
+    fontSize: 14,
+    color: Colors.text.primary,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  memberCell: {
+    width: 150,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    borderRightWidth: 1,
+    borderRightColor: Colors.border.light,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+    backgroundColor: Colors.background.paper,
+    paddingLeft: Spacing.s,
+    paddingRight: Spacing.s,
+  },
+  memberName: {
+    fontFamily: FontFamily.medium,
+    fontSize: 14,
+    color: Colors.text.primary,
+  },
+  monthCell: {
+    width: 80,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: Colors.border.light,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+    padding: 0,
+  },
+  paymentCell: {
+    backgroundColor: Colors.grey[50],
+  },
+  paidCell: {
+    backgroundColor: Colors.success.light,
+  },
+  unpaidCell: {
+    backgroundColor: Colors.grey[50],
+  },
+  paymentText: {
+    fontFamily: FontFamily.bold,
+    fontSize: 16,
+    color: Colors.text.secondary,
+  },
+  paidText: {
+    color: Colors.success.main,
+  },
+  legendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: Spacing.m,
+    gap: Spacing.l,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  legendBox: {
+    width: 20,
+    height: 20,
+    borderRadius: BorderRadius.s,
+  },
+  legendText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 14,
+    color: Colors.text.secondary,
   },
 });

@@ -80,10 +80,12 @@ export default function DashboardScreen() {
           </Text>
         </View>
         {user?.profileImage && (
-          <Image
-            source={{ uri: user.profileImage }}
-            style={styles.profileImage}
-          />
+          <TouchableOpacity onPress={() => router.push('/profile')}>
+            <Image
+              source={{ uri: user.profileImage }}
+              style={styles.profileImage}
+            />
+          </TouchableOpacity>
         )}
       </View>
 
