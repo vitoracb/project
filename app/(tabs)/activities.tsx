@@ -27,19 +27,26 @@ interface Task {
   id: string;
   title: string;
   status: TaskStatus;
-  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
   dueDate?: string;
 }
 
 // Mock data
 const MOCK_TASKS: Task[] = [
-  { id: '1', title: 'Manutenção da cerca norte', status: 'TODO', priority: 'HIGH', dueDate: '2023-08-15' },
-  { id: '2', title: 'Comprar sementes de milho', status: 'TODO', priority: 'MEDIUM', dueDate: '2023-08-20' },
-  { id: '3', title: 'Coordenar plantio', status: 'IN_PROGRESS', priority: 'HIGH', dueDate: '2023-08-25' },
-  { id: '4', title: 'Reunião com agrônomo', status: 'IN_PROGRESS', priority: 'MEDIUM', dueDate: '2023-08-18' },
-  { id: '5', title: 'Pagar conta de energia', status: 'DONE', priority: 'HIGH', dueDate: '2023-08-10' },
-  { id: '6', title: 'Contratar serviço de irrigação', status: 'DONE', priority: 'LOW', dueDate: '2023-08-05' },
+  { id: '1', title: 'Manutenção da cerca norte', status: 'TODO', dueDate: '2023-08-15' },
+  { id: '2', title: 'Comprar sementes de milho', status: 'TODO', dueDate: '2023-08-20' },
+  { id: '3', title: 'Coordenar plantio', status: 'IN_PROGRESS', dueDate: '2023-08-25' },
+  { id: '4', title: 'Reunião com agrônomo', status: 'IN_PROGRESS', dueDate: '2023-08-18' },
+  { id: '5', title: 'Pagar conta de energia', status: 'DONE', dueDate: '2023-08-10' },
+  { id: '6', title: 'Contratar serviço de irrigação', status: 'DONE', dueDate: '2023-08-05' },
 ];
+
+// Função utilitária para gerar string de data YYYY-MM-DD
+function getDateString(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 export default function ActivitiesScreen() {
   const [viewMode, setViewMode] = useState<'calendar' | 'tasks'>('tasks');
@@ -48,8 +55,8 @@ export default function ActivitiesScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskPriority, setNewTaskPriority] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'>('MEDIUM');
   const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
+  const [selectedDayTasks, setSelectedDayTasks] = useState<Task[]>([]);
 
   // Group tasks by status
   const tasksByStatus = tasks.reduce((acc, task) => {
@@ -62,13 +69,13 @@ export default function ActivitiesScreen() {
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'LOW':
+      case 'Baixa':
         return Colors.success.main;
-      case 'MEDIUM':
+      case 'Média':
         return Colors.warning.main;
-      case 'HIGH':
+      case 'Alta':
         return Colors.error.main;
-      case 'URGENT':
+      case 'Urgente':
         return Colors.error.dark;
       default:
         return Colors.grey[500];
@@ -122,6 +129,9 @@ export default function ActivitiesScreen() {
     const newDate = new Date(currentMonth);
     newDate.setDate(day);
     setSelectedDate(newDate);
+    const dayString = getDateString(newDate);
+    const tasksForDay = tasks.filter(task => task.dueDate === dayString);
+    setSelectedDayTasks(tasksForDay);
     setShowAddModal(true);
   };
 
@@ -138,7 +148,13 @@ export default function ActivitiesScreen() {
           text: 'Excluir',
           style: 'destructive',
           onPress: () => {
-            setTasks(tasks.filter(task => task.id !== taskId));
+            setTasks(prevTasks => {
+              const updatedTasks = prevTasks.filter(task => task.id !== taskId);
+              // Atualizar também as tarefas do dia selecionado
+              const dayString = selectedDate.toLocaleDateString('en-CA');
+              setSelectedDayTasks(updatedTasks.filter(task => task.dueDate === dayString));
+              return updatedTasks;
+            });
           }
         }
       ]
@@ -147,12 +163,12 @@ export default function ActivitiesScreen() {
 
   const handleAddTask = () => {
     if (newTaskTitle.trim()) {
+      const dueDate = getDateString(selectedDate);
       const newTask: Task = {
         id: Date.now().toString(),
         title: newTaskTitle,
         status: 'TODO',
-        priority: newTaskPriority,
-        dueDate: selectedDate.toISOString().split('T')[0],
+        dueDate,
       };
       setTasks([...tasks, newTask]);
       setNewTaskTitle('');
@@ -198,10 +214,11 @@ export default function ActivitiesScreen() {
                         selectedDate.getFullYear() === currentMonth.getFullYear();
       
       const hasTask = tasks.some(task => {
-        const taskDate = new Date(task.dueDate || '');
-        return taskDate.getDate() === day && 
-               taskDate.getMonth() === currentMonth.getMonth() &&
-               taskDate.getFullYear() === currentMonth.getFullYear();
+        if (!task.dueDate) return false;
+        const [year, month, date] = task.dueDate.split('-').map(Number);
+        return year === currentMonth.getFullYear() &&
+               month === currentMonth.getMonth() + 1 &&
+               date === day;
       });
 
       days.push(
@@ -290,12 +307,6 @@ export default function ActivitiesScreen() {
                   {tasksByStatus[status]?.map((task) => (
                     <Card key={task.id} style={styles.taskCard}>
                       <View style={styles.taskHeader}>
-                        <View 
-                          style={[
-                            styles.priorityIndicator, 
-                            { backgroundColor: getPriorityColor(task.priority) }
-                          ]} 
-                        />
                         <Text style={styles.taskTitle}>{task.title}</Text>
                         <View style={styles.taskActions}>
                           {status !== 'TODO' && (
@@ -326,7 +337,7 @@ export default function ActivitiesScreen() {
                       {task.dueDate && (
                         <View style={styles.taskFooter}>
                           <Text style={styles.taskDueDate}>
-                            Data: {getFormattedDate(task.dueDate)}
+                            Data: {task.dueDate ? new Date(task.dueDate + 'T00:00:00').toLocaleDateString('pt-BR') : ''}
                           </Text>
                         </View>
                       )}
@@ -366,37 +377,35 @@ export default function ActivitiesScreen() {
               </TouchableOpacity>
             </View>
 
+            {selectedDayTasks.length > 0 && (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={{ fontFamily: FontFamily.bold, fontSize: 16, marginBottom: 8 }}>Atividades do dia:</Text>
+                {selectedDayTasks.map(task => (
+                  <Card key={task.id} style={{ marginBottom: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View>
+                        <Text style={{ fontFamily: FontFamily.medium, fontSize: 14 }}>{task.title}</Text>
+                        {task.dueDate && (
+                          <Text style={{ fontFamily: FontFamily.regular, fontSize: 12, color: Colors.text.secondary }}>
+                            Data: {task.dueDate ? new Date(task.dueDate + 'T00:00:00').toLocaleDateString('pt-BR') : ''}
+                          </Text>
+                        )}
+                      </View>
+                      <TouchableOpacity onPress={() => handleDeleteTask(task.id)} style={{ padding: 8 }}>
+                        <Trash2 size={18} color={Colors.error.main} />
+                      </TouchableOpacity>
+                    </View>
+                  </Card>
+                ))}
+              </View>
+            )}
+
             <Input
               placeholder="Título da atividade"
               value={newTaskTitle}
               onChangeText={setNewTaskTitle}
               containerStyle={styles.input}
             />
-
-            <View style={styles.priorityContainer}>
-              <Text style={styles.priorityLabel}>Prioridade:</Text>
-              <View style={styles.priorityButtons}>
-                {(['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const).map((priority) => (
-                  <TouchableOpacity
-                    key={priority}
-                    style={[
-                      styles.priorityButton,
-                      newTaskPriority === priority && styles.priorityButtonActive,
-                      { borderColor: getPriorityColor(priority) }
-                    ]}
-                    onPress={() => setNewTaskPriority(priority)}
-                  >
-                    <Text style={[
-                      styles.priorityButtonText,
-                      newTaskPriority === priority && styles.priorityButtonTextActive,
-                      { color: getPriorityColor(priority) }
-                    ]}>
-                      {priority}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
 
             <View style={styles.dateContainer}>
               <Text style={styles.dateLabel}>Data:</Text>
@@ -405,7 +414,7 @@ export default function ActivitiesScreen() {
                 onPress={() => setShowDatePicker(true)}
               >
                 <Text style={styles.dateButtonText}>
-                  {selectedDate.toLocaleDateString('pt-BR')}
+                  {getDateString(selectedDate)}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -593,12 +602,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.xs,
   },
-  priorityIndicator: {
-    width: 3,
-    height: '100%',
-    borderRadius: 2,
-    marginRight: Spacing.s,
-  },
   taskTitle: {
     fontFamily: FontFamily.medium,
     fontSize: 14,
@@ -641,38 +644,6 @@ const styles = StyleSheet.create({
   },
   input: {
     marginBottom: Spacing.m,
-  },
-  priorityContainer: {
-    marginBottom: Spacing.m,
-  },
-  priorityLabel: {
-    fontFamily: FontFamily.medium,
-    fontSize: 14,
-    color: Colors.text.primary,
-    marginBottom: Spacing.s,
-  },
-  priorityButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  priorityButton: {
-    flex: 1,
-    paddingVertical: Spacing.s,
-    paddingHorizontal: Spacing.m,
-    borderWidth: 1,
-    borderRadius: BorderRadius.s,
-    marginHorizontal: Spacing.xs,
-    alignItems: 'center',
-  },
-  priorityButtonActive: {
-    backgroundColor: Colors.primary.light,
-  },
-  priorityButtonText: {
-    fontFamily: FontFamily.medium,
-    fontSize: 12,
-  },
-  priorityButtonTextActive: {
-    color: Colors.primary.main,
   },
   dateContainer: {
     marginBottom: Spacing.l,
