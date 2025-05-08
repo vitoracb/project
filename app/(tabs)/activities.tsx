@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Calendar, ChevronLeft, ChevronRight, Plus, X, Trash2, ArrowLeft, ArrowRight } from 'lucide-react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import Colors from '../../constants/Colors';
 import Spacing, { BorderRadius } from '../../constants/Spacing';
@@ -31,14 +32,7 @@ interface Task {
 }
 
 // Mock data
-const MOCK_TASKS: Task[] = [
-  { id: '1', title: 'Manutenção da cerca norte', status: 'TODO', dueDate: '2023-08-15' },
-  { id: '2', title: 'Comprar sementes de milho', status: 'TODO', dueDate: '2023-08-20' },
-  { id: '3', title: 'Coordenar plantio', status: 'IN_PROGRESS', dueDate: '2023-08-25' },
-  { id: '4', title: 'Reunião com agrônomo', status: 'IN_PROGRESS', dueDate: '2023-08-18' },
-  { id: '5', title: 'Pagar conta de energia', status: 'DONE', dueDate: '2023-08-10' },
-  { id: '6', title: 'Contratar serviço de irrigação', status: 'DONE', dueDate: '2023-08-05' },
-];
+const MOCK_TASKS: Task[] = [];
 
 // Função utilitária para gerar string de data YYYY-MM-DD
 function getDateString(date: Date) {
@@ -57,6 +51,20 @@ export default function ActivitiesScreen() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
   const [selectedDayTasks, setSelectedDayTasks] = useState<Task[]>([]);
+
+  // Carregar tarefas do AsyncStorage ao abrir o app
+  useEffect(() => {
+    AsyncStorage.getItem('user_tasks').then(data => {
+      if (data) {
+        setTasks(JSON.parse(data));
+      }
+    });
+  }, []);
+
+  // Salvar tarefas sempre que tasks mudar
+  useEffect(() => {
+    AsyncStorage.setItem('user_tasks', JSON.stringify(tasks));
+  }, [tasks]);
 
   // Group tasks by status
   const tasksByStatus = tasks.reduce((acc, task) => {

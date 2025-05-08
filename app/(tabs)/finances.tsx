@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -8,9 +8,13 @@ import {
   FlatList,
   Alert,
   Modal,
-  TextInput
+  TextInput,
+  Platform
 } from 'react-native';
-import { DollarSign, Filter, Plus, Search, ArrowDown, ArrowUp, Trash2, X } from 'lucide-react-native';
+import { DollarSign, Filter, Plus, Search, ArrowDown, ArrowUp, Trash2, X, ArrowLeft, ArrowRight, Calendar } from 'lucide-react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Calendar as CalendarView } from 'react-native-calendars';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import Colors from '../../constants/Colors';
 import Spacing, { BorderRadius } from '../../constants/Spacing';
@@ -18,50 +22,6 @@ import { FontFamily } from '../../constants/Typography';
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
 import Input from '../../components/common/Input';
-
-// Mock data for expenses
-const MOCK_EXPENSES = [
-  { 
-    id: '1', 
-    description: 'Fertilizantes', 
-    amount: 2500.0, 
-    date: '2023-08-10',
-    category: 'Insumos',
-    receipt: null,
-  },
-  { 
-    id: '2', 
-    description: 'Manutenção do trator', 
-    amount: 1200.0, 
-    date: '2023-08-05',
-    category: 'Maquinário',
-    receipt: 'receipt_url.pdf',
-  },
-  { 
-    id: '3', 
-    description: 'Sementes', 
-    amount: 3500.0, 
-    date: '2023-07-25',
-    category: 'Insumos',
-    receipt: null,
-  },
-  { 
-    id: '4', 
-    description: 'Mão de obra', 
-    amount: 5000.0, 
-    date: '2023-07-20',
-    category: 'Pessoal',
-    receipt: null,
-  },
-  { 
-    id: '5', 
-    description: 'Conta de energia', 
-    amount: 750.0, 
-    date: '2023-07-15',
-    category: 'Utilidades',
-    receipt: 'receipt_url.pdf',
-  },
-];
 
 // Mock data for payments
 const MOCK_PAYMENTS = [
@@ -159,6 +119,8 @@ const MOCK_MONTHLY_PAYMENTS: AnnualPayments = {
 
 const MONTHS: Month[] = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
+const MONTHS_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
 const formatCurrency = (value: number) => {
   return value.toLocaleString('pt-BR', {
     style: 'currency',
@@ -167,18 +129,29 @@ const formatCurrency = (value: number) => {
 };
 
 const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('pt-BR');
+  if (!dateString) return '';
+  // Forçar a data como local, não UTC
+  const [year, month, day] = dateString.split('-');
+  return `${day}/${month}/${year}`;
 };
 
 type FinanceTab = 'expenses' | 'payments' | 'cashflow' | 'annual';
+
+interface Expense {
+  id: string;
+  description: string;
+  amount: number;
+  date: string;
+  category: string;
+  receipt: string | null;
+}
 
 export default function FinancesScreen() {
   const [activeTab, setActiveTab] = useState<FinanceTab>('expenses');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedYear, setSelectedYear] = useState(2024);
-  const [selectedMonth, setSelectedMonth] = useState(7);
-  const [expenses, setExpenses] = useState(MOCK_EXPENSES);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [newExpense, setNewExpense] = useState({
     description: '',
@@ -187,6 +160,76 @@ export default function FinancesScreen() {
     category: '',
   });
   const [monthlyPayments, setMonthlyPayments] = useState(MOCK_MONTHLY_PAYMENTS);
+  const [expensesTab, setExpensesTab] = useState<'general' | 'monthly'>('general');
+  const [selectedMonthlyYear, setSelectedMonthlyYear] = useState(new Date().getFullYear());
+  const [showAddMonthlyModal, setShowAddMonthlyModal] = useState(false);
+  const [newMonthlyExpense, setNewMonthlyExpense] = useState({
+    description: '',
+    amount: '',
+    date: '',
+    category: '',
+  });
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showMonthlyDatePicker, setShowMonthlyDatePicker] = useState(false);
+  const [selectedMonthlyDate, setSelectedMonthlyDate] = useState(new Date());
+  const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
+  const [filterStartDate, setFilterStartDate] = useState<string | null>(null);
+  const [filterEndDate, setFilterEndDate] = useState<string | null>(null);
+  const [filterCategory, setFilterCategory] = useState<string>('');
+  const [showCalendar, setShowCalendar] = useState<'start' | 'end' | null>(null);
+  const [showGeneralCalendar, setShowGeneralCalendar] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showMonthlyExpensesModal, setShowMonthlyExpensesModal] = useState(false);
+  const [showFilterCategoryModal, setShowFilterCategoryModal] = useState(false);
+
+  const categories = Array.from(new Set(expenses.map(e => e.category)));
+
+  const fixedCategories = ['Funcionário', 'Insumos', 'Infraestrutura', 'Maquinário', 'Mão de Obra', 'Outros'];
+
+  const applyFilters = (expense: typeof expenses[0]) => {
+    let pass = true;
+    if (filterStartDate) pass = pass && new Date(expense.date) >= new Date(filterStartDate);
+    if (filterEndDate) pass = pass && new Date(expense.date) <= new Date(filterEndDate);
+    if (filterCategory) pass = pass && expense.category === filterCategory;
+    return pass;
+  };
+
+  const clearFilters = () => {
+    setFilterStartDate(null);
+    setFilterEndDate(null);
+    setFilterCategory('');
+  };
+
+  // Filtrar despesas do mês/ano selecionado
+  const monthlyExpenses = expenses.filter(exp => {
+    if (!exp.date) return false;
+    const [year, month] = exp.date.split('-');
+    return (
+      Number(year) === selectedMonthlyYear &&
+      Number(month) === selectedMonth + 1 // selectedMonth é zero-based
+    );
+  });
+
+  // Função para adicionar despesa mensal
+  const handleAddMonthlyExpense = () => {
+    if (!newMonthlyExpense.description || !newMonthlyExpense.amount || !newMonthlyExpense.category) {
+      Alert.alert('Erro', 'Preencha todos os campos.');
+      return;
+    }
+    const date = `${selectedMonthlyYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`;
+    const expense = {
+      id: Date.now().toString(),
+      description: newMonthlyExpense.description,
+      amount: parseFloat(newMonthlyExpense.amount),
+      date,
+      category: newMonthlyExpense.category,
+      receipt: null,
+    };
+    setExpenses([expense, ...expenses]);
+    setNewMonthlyExpense({ description: '', amount: '', date: '', category: '' });
+    setShowAddMonthlyModal(false);
+  };
 
   // Função utilitária para garantir estrutura do ano
   function ensureYearStructure(year: number, prev: AnnualPayments): AnnualPayments {
@@ -267,6 +310,28 @@ export default function FinancesScreen() {
     setIsAddModalVisible(false);
   };
 
+  const handleDateChange = (event: any, date?: Date) => {
+    setShowDatePicker(false);
+    if (date) {
+      setSelectedDate(date);
+      setNewExpense({
+        ...newExpense,
+        date: date.toISOString().split('T')[0]
+      });
+    }
+  };
+
+  const handleMonthlyDateChange = (event: any, date?: Date) => {
+    setShowMonthlyDatePicker(false);
+    if (date) {
+      setSelectedMonthlyDate(date);
+      setNewMonthlyExpense({
+        ...newMonthlyExpense,
+        date: date.toISOString().split('T')[0]
+      });
+    }
+  };
+
   const renderAddExpenseModal = () => (
     <Modal
       visible={isAddModalVisible}
@@ -303,19 +368,48 @@ export default function FinancesScreen() {
               leftIcon={<DollarSign size={20} color={Colors.text.secondary} />}
             />
 
-            <Input
-              label="Data"
-              value={newExpense.date}
-              onChangeText={(text) => setNewExpense({ ...newExpense, date: text })}
-              placeholder="YYYY-MM-DD"
-            />
+            <TouchableOpacity
+              style={styles.dateInputContainer}
+              onPress={() => setShowGeneralCalendar(true)}
+            >
+              <Text style={styles.dateInputLabel}>Data</Text>
+              <View style={styles.dateInput}>
+                <Text style={styles.dateInputText}>
+                  {newExpense.date ? formatDate(newExpense.date) : 'Selecione uma data'}
+                </Text>
+                <Calendar size={20} color={Colors.text.secondary} />
+              </View>
+            </TouchableOpacity>
 
-            <Input
-              label="Categoria"
-              value={newExpense.category}
-              onChangeText={(text) => setNewExpense({ ...newExpense, category: text })}
-              placeholder="Digite a categoria"
-            />
+            {showGeneralCalendar && (
+              <View style={{ marginBottom: 16 }}>
+                <CalendarView
+                  onDayPress={(day: { dateString: string; day: number; month: number; year: number; timestamp: number; }) => {
+                    setNewExpense({ ...newExpense, date: day.dateString });
+                    setShowGeneralCalendar(false);
+                  }}
+                  markedDates={newExpense.date ? { [newExpense.date]: { selected: true, selectedColor: Colors.primary.main } } : {}}
+                  theme={{
+                    todayTextColor: Colors.primary.main,
+                    selectedDayBackgroundColor: Colors.primary.main,
+                    arrowColor: Colors.primary.main,
+                  }}
+                />
+              </View>
+            )}
+
+            <View style={{ marginBottom: 24 }}>
+              <Text style={styles.dateInputLabel}>Categoria</Text>
+              <TouchableOpacity
+                style={[styles.dateInput, { padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                onPress={() => setShowCategoryModal(true)}
+              >
+                <Text style={[styles.dateInputText, { color: newExpense.category ? Colors.text.primary : Colors.text.secondary }] }>
+                  {newExpense.category || 'Selecionar Categoria'}
+                </Text>
+                <ArrowDown size={18} color={Colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.modalFooter}>
@@ -323,7 +417,7 @@ export default function FinancesScreen() {
               title="Cancelar"
               variant="outlined"
               onPress={() => setIsAddModalVisible(false)}
-              style={styles.modalButton}
+              style={{ ...styles.modalButton, marginRight: 12 }}
             />
             <Button
               title="Adicionar"
@@ -334,68 +428,185 @@ export default function FinancesScreen() {
           </View>
         </Card>
       </View>
+      <Modal
+        visible={showCategoryModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowCategoryModal(false)}
+      >
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' }} activeOpacity={1} onPress={() => setShowCategoryModal(false)} />
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: Colors.background.paper, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 }}>
+          {fixedCategories.map(cat => (
+            <TouchableOpacity
+              key={cat}
+              onPress={() => {
+                setNewExpense({ ...newExpense, category: cat });
+                setShowCategoryModal(false);
+              }}
+              style={{
+                paddingVertical: 16,
+                borderBottomWidth: 1,
+                borderBottomColor: Colors.border.light,
+              }}
+            >
+              <Text style={{ fontSize: 16, color: Colors.text.primary }}>{cat}</Text>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity onPress={() => setShowCategoryModal(false)} style={{ paddingVertical: 16 }}>
+            <Text style={{ fontSize: 16, color: Colors.error.main, textAlign: 'center' }}>Cancelar</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </Modal>
   );
 
+  const filteredExpenses = expenses.filter(expense => {
+    const query = searchQuery.toLowerCase();
+    return (
+      expense.description.toLowerCase().includes(query) ||
+      expense.category.toLowerCase().includes(query) ||
+      expense.amount.toString().includes(query)
+    );
+  });
+
   const renderExpensesTab = () => {
+    const firstColumnMonths = MONTHS_PT.slice(0, 6);
+    const secondColumnMonths = MONTHS_PT.slice(6, 12);
+
     return (
       <View style={styles.tabContent}>
-        <View style={styles.searchContainer}>
-          <Input
-            placeholder="Buscar despesas..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            leftIcon={<Search size={20} color={Colors.text.secondary} />}
-            containerStyle={styles.searchInput}
-          />
-          <TouchableOpacity style={styles.filterButton}>
-            <Filter size={20} color={Colors.text.primary} />
+        <View style={styles.expensesTabsContainer}>
+          <TouchableOpacity
+            style={[styles.expensesTab, expensesTab === 'general' && styles.activeExpensesTab]}
+            onPress={() => setExpensesTab('general')}
+          >
+            <Text style={[styles.expensesTabText, expensesTab === 'general' && styles.activeExpensesTabText]}>Despesas Gerais</Text>
           </TouchableOpacity>
-          <Button
-            title="Nova"
-            variant="primary"
-            size="small"
-            icon={<Plus size={16} color={Colors.white} />}
-            onPress={() => setIsAddModalVisible(true)}
-          />
+          <TouchableOpacity
+            style={[styles.expensesTab, expensesTab === 'monthly' && styles.activeExpensesTab]}
+            onPress={() => setExpensesTab('monthly')}
+          >
+            <Text style={[styles.expensesTabText, expensesTab === 'monthly' && styles.activeExpensesTabText]}>Despesas Mensais</Text>
+          </TouchableOpacity>
         </View>
+        {expensesTab === 'general' ? (
+          <>
+            <View style={styles.searchContainer}>
+              <Input
+                placeholder="Buscar despesas..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                leftIcon={<Search size={20} color={Colors.text.secondary} />}
+                containerStyle={styles.searchInput}
+              />
+              <TouchableOpacity style={styles.filterButton} onPress={() => setIsFilterModalVisible(true)}>
+                <Filter size={20} color={Colors.text.primary} />
+              </TouchableOpacity>
+              <Button
+                title="Nova"
+                variant="primary"
+                size="small"
+                icon={<Plus size={16} color={Colors.white} />}
+                onPress={() => setIsAddModalVisible(true)}
+              />
+            </View>
 
-        <FlatList
-          data={expenses}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <Card style={styles.expenseCard}>
-              <View style={styles.expenseHeader}>
-                <Text style={styles.expenseDescription}>{item.description}</Text>
-                <View style={styles.expenseHeaderRight}>
-                  <Text style={styles.expenseAmount}>{formatCurrency(item.amount)}</Text>
+            <FlatList
+              data={filteredExpenses.filter(applyFilters)}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <Card style={styles.expenseCard}>
+                  <View style={styles.expenseHeader}>
+                    <Text style={styles.expenseDescription}>{item.description}</Text>
+                    <View style={styles.expenseHeaderRight}>
+                      <Text style={styles.expenseAmount}>{formatCurrency(item.amount)}</Text>
+                      <TouchableOpacity
+                        onPress={() => handleDeleteExpense(item.id)}
+                        style={styles.deleteButton}
+                      >
+                        <Trash2 size={16} color={Colors.error.main} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <View style={styles.expenseDetails}>
+                    <View style={styles.expenseDetail}>
+                      <Text style={styles.expenseDetailLabel}>Data:</Text>
+                      <Text style={styles.expenseDetailValue}>{formatDate(item.date)}</Text>
+                    </View>
+                    <View style={styles.expenseDetail}>
+                      <Text style={styles.expenseDetailLabel}>Categoria:</Text>
+                      <Text style={styles.expenseDetailValue}>{item.category}</Text>
+                    </View>
+                    {item.receipt && (
+                      <TouchableOpacity style={styles.receiptButton}>
+                        <Text style={styles.receiptButtonText}>Ver comprovante</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </Card>
+              )}
+              style={styles.expensesList}
+            />
+          </>
+        ) : (
+          <>
+            <View style={styles.monthlyYearSelector}>
+              <TouchableOpacity onPress={() => setSelectedMonthlyYear(selectedMonthlyYear - 1)} style={styles.periodControl}>
+                <ArrowLeft size={20} color={Colors.text.primary} />
+              </TouchableOpacity>
+              <Text style={styles.periodText}>{selectedMonthlyYear}</Text>
+              <TouchableOpacity onPress={() => setSelectedMonthlyYear(selectedMonthlyYear + 1)} style={styles.periodControl}>
+                <ArrowRight size={20} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.monthButtonsGrid}>
+              <View style={styles.monthColumn}>
+                {firstColumnMonths.map((month, idx) => (
                   <TouchableOpacity
-                    onPress={() => handleDeleteExpense(item.id)}
-                    style={styles.deleteButton}
+                    key={month}
+                    style={[
+                      styles.monthButton,
+                      selectedMonth === idx && styles.activeMonthButton
+                    ]}
+                    onPress={() => {
+                      setSelectedMonth(idx);
+                      setShowMonthlyExpensesModal(true);
+                    }}
                   >
-                    <Trash2 size={16} color={Colors.error.main} />
+                    <Text style={[
+                      styles.monthButtonText,
+                      selectedMonth === idx && styles.activeMonthButtonText
+                    ]}>
+                      {month}
+                    </Text>
                   </TouchableOpacity>
-                </View>
+                ))}
               </View>
-              <View style={styles.expenseDetails}>
-                <View style={styles.expenseDetail}>
-                  <Text style={styles.expenseDetailLabel}>Data:</Text>
-                  <Text style={styles.expenseDetailValue}>{formatDate(item.date)}</Text>
-                </View>
-                <View style={styles.expenseDetail}>
-                  <Text style={styles.expenseDetailLabel}>Categoria:</Text>
-                  <Text style={styles.expenseDetailValue}>{item.category}</Text>
-                </View>
-                {item.receipt && (
-                  <TouchableOpacity style={styles.receiptButton}>
-                    <Text style={styles.receiptButtonText}>Ver comprovante</Text>
+              <View style={styles.monthColumn}>
+                {secondColumnMonths.map((month, idx) => (
+                  <TouchableOpacity
+                    key={month}
+                    style={[
+                      styles.monthButton,
+                      selectedMonth === idx + 6 && styles.activeMonthButton
+                    ]}
+                    onPress={() => {
+                      setSelectedMonth(idx + 6);
+                      setShowMonthlyExpensesModal(true);
+                    }}
+                  >
+                    <Text style={[
+                      styles.monthButtonText,
+                      selectedMonth === idx + 6 && styles.activeMonthButtonText
+                    ]}>
+                      {month}
+                    </Text>
                   </TouchableOpacity>
-                )}
+                ))}
               </View>
-            </Card>
-          )}
-          style={styles.expensesList}
-        />
+            </View>
+          </>
+        )}
       </View>
     );
   };
@@ -624,6 +835,208 @@ export default function FinancesScreen() {
     );
   };
 
+  const renderFilterModal = () => (
+    <Modal
+      visible={isFilterModalVisible}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setIsFilterModalVisible(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <Card style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Filtrar Despesas</Text>
+            <TouchableOpacity onPress={() => setIsFilterModalVisible(false)} style={styles.closeButton}>
+              <X size={24} color={Colors.text.primary} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.modalBody}>
+            <TouchableOpacity style={styles.dateInputContainer} onPress={() => setShowCalendar('start')}>
+              <Text style={styles.dateInputLabel}>Data Inicial</Text>
+              <View style={styles.dateInput}>
+                <Text style={styles.dateInputText}>{filterStartDate ? formatDate(filterStartDate) : 'Selecione'}</Text>
+                <Calendar size={20} color={Colors.text.secondary} />
+              </View>
+            </TouchableOpacity>
+            {showCalendar === 'start' && (
+              <View style={{ marginBottom: 16 }}>
+                <CalendarView
+                  onDayPress={(day: { dateString: string; day: number; month: number; year: number; timestamp: number; }) => {
+                    setFilterStartDate(day.dateString);
+                    setShowCalendar(null);
+                  }}
+                  markedDates={filterStartDate ? { [filterStartDate]: { selected: true, selectedColor: Colors.primary.main } } : {}}
+                  theme={{
+                    todayTextColor: Colors.primary.main,
+                    selectedDayBackgroundColor: Colors.primary.main,
+                    arrowColor: Colors.primary.main,
+                  }}
+                />
+              </View>
+            )}
+            <TouchableOpacity style={styles.dateInputContainer} onPress={() => setShowCalendar('end')}>
+              <Text style={styles.dateInputLabel}>Data Final</Text>
+              <View style={styles.dateInput}>
+                <Text style={styles.dateInputText}>{filterEndDate ? formatDate(filterEndDate) : 'Selecione'}</Text>
+                <Calendar size={20} color={Colors.text.secondary} />
+              </View>
+            </TouchableOpacity>
+            {showCalendar === 'end' && (
+              <View style={{ marginBottom: 16 }}>
+                <CalendarView
+                  onDayPress={(day: { dateString: string; day: number; month: number; year: number; timestamp: number; }) => {
+                    setFilterEndDate(day.dateString);
+                    setShowCalendar(null);
+                  }}
+                  markedDates={filterEndDate ? { [filterEndDate]: { selected: true, selectedColor: Colors.primary.main } } : {}}
+                  theme={{
+                    todayTextColor: Colors.primary.main,
+                    selectedDayBackgroundColor: Colors.primary.main,
+                    arrowColor: Colors.primary.main,
+                  }}
+                />
+              </View>
+            )}
+            <View style={{ marginBottom: 24 }}>
+              <Text style={styles.dateInputLabel}>Categoria</Text>
+              <TouchableOpacity
+                style={[styles.dateInput, { padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                onPress={() => setShowFilterCategoryModal(true)}
+              >
+                <Text style={[styles.dateInputText, { color: filterCategory ? Colors.text.primary : Colors.text.secondary }] }>
+                  {filterCategory || 'Selecionar Categoria'}
+                </Text>
+                <ArrowDown size={18} color={Colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+          <View style={styles.modalFooter}>
+            <Button title="Limpar" variant="outlined" onPress={clearFilters} style={{ ...styles.modalButton, marginRight: 12 }} />
+            <Button title="Aplicar" variant="primary" onPress={() => setIsFilterModalVisible(false)} style={styles.modalButton} />
+          </View>
+        </Card>
+      </View>
+      <Modal
+        visible={showFilterCategoryModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowFilterCategoryModal(false)}
+      >
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' }} activeOpacity={1} onPress={() => setShowFilterCategoryModal(false)} />
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: Colors.background.paper, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 }}>
+          <TouchableOpacity
+            onPress={() => {
+              setFilterCategory('');
+              setShowFilterCategoryModal(false);
+            }}
+            style={{ paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border.light }}
+          >
+            <Text style={{ fontSize: 16, color: filterCategory === '' ? Colors.primary.main : Colors.text.primary }}>Todas</Text>
+          </TouchableOpacity>
+          {fixedCategories.map(cat => (
+            <TouchableOpacity
+              key={cat}
+              onPress={() => {
+                setFilterCategory(cat);
+                setShowFilterCategoryModal(false);
+              }}
+              style={{ paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border.light }}
+            >
+              <Text style={{ fontSize: 16, color: filterCategory === cat ? Colors.primary.main : Colors.text.primary }}>{cat}</Text>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity onPress={() => setShowFilterCategoryModal(false)} style={{ paddingVertical: 16 }}>
+            <Text style={{ fontSize: 16, color: Colors.error.main, textAlign: 'center' }}>Cancelar</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+    </Modal>
+  );
+
+  const renderMonthlyExpensesModal = () => {
+    const totalMonthly = monthlyExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+
+    return (
+      <Modal
+        visible={showMonthlyExpensesModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowMonthlyExpensesModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Card style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Despesas de {MONTHS_PT[selectedMonth]} {selectedMonthlyYear}</Text>
+              <TouchableOpacity
+                onPress={() => setShowMonthlyExpensesModal(false)}
+                style={styles.closeButton}
+              >
+                <X size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalBody}>
+              <View style={{ marginBottom: 16 }}>
+                <Text style={{ fontFamily: FontFamily.bold, fontSize: 16, color: Colors.text.primary }}>
+                  Total do mês: {formatCurrency(totalMonthly)}
+                </Text>
+              </View>
+              {monthlyExpenses.length > 0 ? (
+                <FlatList
+                  data={monthlyExpenses}
+                  keyExtractor={(item) => item.id}
+                  renderItem={({ item }) => (
+                    <Card style={styles.expenseCard}>
+                      <View style={styles.expenseHeader}>
+                        <Text style={styles.expenseDescription}>{item.description}</Text>
+                        <View style={styles.expenseHeaderRight}>
+                          <Text style={styles.expenseAmount}>{formatCurrency(item.amount)}</Text>
+                          <TouchableOpacity
+                            onPress={() => handleDeleteExpense(item.id)}
+                            style={styles.deleteButton}
+                          >
+                            <Trash2 size={16} color={Colors.error.main} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                      <View style={styles.expenseDetails}>
+                        <View style={styles.expenseDetail}>
+                          <Text style={styles.expenseDetailLabel}>Data:</Text>
+                          <Text style={styles.expenseDetailValue}>{formatDate(item.date)}</Text>
+                        </View>
+                        <View style={styles.expenseDetail}>
+                          <Text style={styles.expenseDetailLabel}>Categoria:</Text>
+                          <Text style={styles.expenseDetailValue}>{item.category}</Text>
+                        </View>
+                      </View>
+                    </Card>
+                  )}
+                />
+              ) : (
+                <View style={styles.emptyStateContainer}>
+                  <Text style={styles.emptyStateText}>
+                    Nenhuma despesa registrada para este mês
+                  </Text>
+                </View>
+              )}
+            </View>
+          </Card>
+        </View>
+      </Modal>
+    );
+  };
+
+  // Persistência com AsyncStorage
+  useEffect(() => {
+    (async () => {
+      const saved = await AsyncStorage.getItem('expenses');
+      if (saved) setExpenses(JSON.parse(saved));
+    })();
+  }, []);
+
+  useEffect(() => {
+    AsyncStorage.setItem('expenses', JSON.stringify(expenses));
+  }, [expenses]);
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -691,6 +1104,8 @@ export default function FinancesScreen() {
       {activeTab === 'cashflow' && renderCashFlowTab()}
       {activeTab === 'annual' && renderAnnualClosingTab()}
       {renderAddExpenseModal()}
+      {renderFilterModal()}
+      {renderMonthlyExpensesModal()}
     </View>
   );
 }
@@ -966,7 +1381,10 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: Colors.background.paper,
     borderRadius: BorderRadius.l,
-    padding: Spacing.l,
+    paddingTop: Spacing.l,
+    paddingHorizontal: Spacing.l,
+    paddingBottom: 80,
+    maxHeight: '90%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -983,11 +1401,150 @@ const styles = StyleSheet.create({
     padding: Spacing.xs,
   },
   modalBody: {
+    marginBottom: 24,
+  },
+  addExpenseSection: {
     marginBottom: Spacing.l,
   },
+  expensesListSection: {
+    flex: 1,
+  },
+  sectionTitle: {
+    fontFamily: FontFamily.bold,
+    fontSize: 16,
+    color: Colors.text.primary,
+    marginBottom: Spacing.m,
+  },
+  expensesTabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: Colors.background.paper,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  expensesTab: {
+    flex: 1,
+    paddingVertical: Spacing.m,
+    alignItems: 'center',
+  },
+  activeExpensesTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: Colors.primary.main,
+  },
+  expensesTabText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  activeExpensesTabText: {
+    color: Colors.primary.main,
+  },
+  monthlyYearSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.l,
+  },
+  monthlyExpensesPlaceholder: {
+    height: 200,
+    backgroundColor: Colors.grey[100],
+    borderRadius: BorderRadius.s,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  monthlyExpensesPlaceholderText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 16,
+    color: Colors.text.secondary,
+  },
+  monthButtonsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 16,
+    gap: 16,
+  },
+  monthColumn: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  monthButton: {
+    width: 120,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 8,
+    borderRadius: 8,
+    backgroundColor: Colors.background.paper,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+  },
+  activeMonthButton: {
+    backgroundColor: Colors.primary.light,
+    borderColor: Colors.primary.main,
+  },
+  monthButtonText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  activeMonthButtonText: {
+    color: Colors.primary.main,
+  },
+  dateInputContainer: {
+    marginBottom: Spacing.m,
+  },
+  dateInputLabel: {
+    fontFamily: FontFamily.medium,
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginBottom: Spacing.xs,
+  },
+  dateInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: BorderRadius.s,
+    padding: Spacing.s,
+    backgroundColor: Colors.background.paper,
+  },
+  dateInputText: {
+    fontFamily: FontFamily.regular,
+    fontSize: 14,
+    color: Colors.text.primary,
+  },
+  monthlyExpensesContainer: {
+    flex: 1,
+    marginTop: Spacing.l,
+  },
+  monthlyExpensesTitle: {
+    fontFamily: FontFamily.bold,
+    fontSize: 18,
+    color: Colors.text.primary,
+    marginBottom: Spacing.m,
+  },
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.l,
+  },
+  emptyStateText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 16,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+  },
   modalFooter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    backgroundColor: Colors.background.paper,
+    borderBottomLeftRadius: BorderRadius.l,
+    borderBottomRightRadius: BorderRadius.l,
+    padding: Spacing.l,
     gap: Spacing.s,
   },
   modalButton: {
@@ -1001,35 +1558,11 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.s,
     overflow: 'hidden',
   },
-  tableContainer: {
-    width: '100%',
-  },
   tableHeader: {
     flexDirection: 'row',
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
     backgroundColor: Colors.grey[100],
-  },
-  headerCell: {
-    width: 80,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRightWidth: 1,
-    borderRightColor: Colors.border.light,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
-    padding: 0,
-  },
-  headerText: {
-    fontFamily: FontFamily.bold,
-    fontSize: 14,
-    color: Colors.text.primary,
-  },
-  tableRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
   },
   memberCell: {
     width: 150,
@@ -1044,8 +1577,8 @@ const styles = StyleSheet.create({
     paddingLeft: Spacing.s,
     paddingRight: Spacing.s,
   },
-  memberName: {
-    fontFamily: FontFamily.medium,
+  headerText: {
+    fontFamily: FontFamily.bold,
     fontSize: 14,
     color: Colors.text.primary,
   },
@@ -1060,38 +1593,50 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border.light,
     padding: 0,
   },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  memberName: {
+    fontFamily: FontFamily.medium,
+    fontSize: 14,
+    color: Colors.text.primary,
+  },
   paymentCell: {
-    backgroundColor: Colors.grey[50],
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   paidCell: {
     backgroundColor: Colors.success.light,
   },
   unpaidCell: {
-    backgroundColor: Colors.grey[50],
+    backgroundColor: Colors.error.light,
   },
   paymentText: {
-    fontFamily: FontFamily.bold,
-    fontSize: 16,
-    color: Colors.text.secondary,
+    fontFamily: FontFamily.medium,
+    fontSize: 14,
+    color: Colors.text.primary,
   },
   paidText: {
     color: Colors.success.main,
   },
   legendContainer: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginTop: Spacing.m,
-    gap: Spacing.l,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
   },
   legendBox: {
-    width: 20,
-    height: 20,
-    borderRadius: BorderRadius.s,
+    width: 16,
+    height: 16,
+    borderRadius: BorderRadius.round,
+    marginRight: Spacing.s,
   },
   legendText: {
     fontFamily: FontFamily.medium,
