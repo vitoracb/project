@@ -9,12 +9,15 @@ import {
   Alert,
   Modal,
   TextInput,
-  Platform
+  Platform,
+  Dimensions
 } from 'react-native';
 import { DollarSign, Filter, Plus, Search, ArrowDown, ArrowUp, Trash2, X, ArrowLeft, ArrowRight, Calendar } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Calendar as CalendarView } from 'react-native-calendars';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// @ts-ignore
+import { PieChart } from 'react-native-svg-charts';
 
 import Colors from '../../constants/Colors';
 import Spacing, { BorderRadius } from '../../constants/Spacing';
@@ -182,10 +185,25 @@ export default function FinancesScreen() {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showMonthlyExpensesModal, setShowMonthlyExpensesModal] = useState(false);
   const [showFilterCategoryModal, setShowFilterCategoryModal] = useState(false);
+  const [isAddPaymentModalVisible, setIsAddPaymentModalVisible] = useState(false);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [showPaymentCategoryModal, setShowPaymentCategoryModal] = useState(false);
+  const [showPaymentDateCalendar, setShowPaymentDateCalendar] = useState(false);
+  const [newPayment, setNewPayment] = useState({ memberId: '', memberName: '', amount: '', date: '', category: '', observations: '' });
+  const [paymentsTab, setPaymentsTab] = useState<'general' | 'monthly'>('general');
+  const [searchPaymentQuery, setSearchPaymentQuery] = useState('');
+  const [filterPaymentCategory, setFilterPaymentCategory] = useState('');
+  const [filterPaymentStartDate, setFilterPaymentStartDate] = useState<string | null>(null);
+  const [filterPaymentEndDate, setFilterPaymentEndDate] = useState<string | null>(null);
+  const [selectedPaymentYear, setSelectedPaymentYear] = useState(new Date().getFullYear());
+  const [selectedPaymentMonth, setSelectedPaymentMonth] = useState(new Date().getMonth());
+  const [showPaymentFilterModal, setShowPaymentFilterModal] = useState(false);
+  const [showMonthlyPaymentsModal, setShowMonthlyPaymentsModal] = useState(false);
 
   const categories = Array.from(new Set(expenses.map(e => e.category)));
 
-  const fixedCategories = ['Funcionário', 'Insumos', 'Infraestrutura', 'Maquinário', 'Mão de Obra', 'Outros'];
+  const fixedCategories = ['Mensalidade', 'Taxa Extra', 'Funcionário', 'Insumos', 'Infraestrutura', 'Maquinário', 'Mão de Obra', 'Outros'];
 
   const applyFilters = (expense: typeof expenses[0]) => {
     let pass = true;
@@ -644,114 +662,262 @@ export default function FinancesScreen() {
   };
 
   const renderPaymentsTab = () => {
+    const firstColumnMonths = MONTHS_PT.slice(0, 6);
+    const secondColumnMonths = MONTHS_PT.slice(6, 12);
+
+    // Filtros
+    const filteredPayments = payments.filter(payment => {
+      const query = searchPaymentQuery.toLowerCase();
+      let pass = true;
+      if (query) {
+        pass = pass && (
+          payment.memberName?.toLowerCase().includes(query) ||
+          payment.category?.toLowerCase().includes(query) ||
+          payment.amount?.toString().includes(query)
+        );
+      }
+      if (filterPaymentCategory) pass = pass && payment.category === filterPaymentCategory;
+      if (filterPaymentStartDate) pass = pass && new Date(payment.date) >= new Date(filterPaymentStartDate);
+      if (filterPaymentEndDate) pass = pass && new Date(payment.date) <= new Date(filterPaymentEndDate);
+      return pass;
+    });
+
+    // Pagamentos do mês/ano selecionado
+    const monthlyPaymentsList = payments.filter(payment => {
+      if (!payment.date) return false;
+      const [year, month] = payment.date.split('-');
+      return (
+        Number(year) === selectedPaymentYear &&
+        Number(month) === selectedPaymentMonth + 1
+      );
+    });
+
     return (
       <View style={styles.tabContent}>
-        <View style={styles.periodSelector}>
-          <View style={styles.yearSelector}>
-            <TouchableOpacity 
-              onPress={() => handleSetYear(selectedYear - 1)}
-              style={styles.periodControl}
-            >
-              <ArrowDown size={20} color={Colors.text.primary} />
-            </TouchableOpacity>
-            <Text style={styles.periodText}>{selectedYear}</Text>
-            <TouchableOpacity 
-              onPress={() => handleSetYear(selectedYear + 1)}
-              style={styles.periodControl}
-            >
-              <ArrowUp size={20} color={Colors.text.primary} />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.monthSelector}>
-            <TouchableOpacity 
-              onPress={() => setSelectedMonth(selectedMonth > 1 ? selectedMonth - 1 : 12)}
-              style={styles.periodControl}
-            >
-              <ArrowDown size={20} color={Colors.text.primary} />
-            </TouchableOpacity>
-            <Text style={styles.periodText}>{getMonthName(selectedMonth)}</Text>
-            <TouchableOpacity 
-              onPress={() => setSelectedMonth(selectedMonth < 12 ? selectedMonth + 1 : 1)}
-              style={styles.periodControl}
-            >
-              <ArrowUp size={20} color={Colors.text.primary} />
-            </TouchableOpacity>
-          </View>
+        <View style={styles.expensesTabsContainer}>
+          <TouchableOpacity
+            style={[styles.expensesTab, paymentsTab === 'general' && styles.activeExpensesTab]}
+            onPress={() => setPaymentsTab('general')}
+          >
+            <Text style={[styles.expensesTabText, paymentsTab === 'general' && styles.activeExpensesTabText]}>Pagamentos Geral</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.expensesTab, paymentsTab === 'monthly' && styles.activeExpensesTab]}
+            onPress={() => setPaymentsTab('monthly')}
+          >
+            <Text style={[styles.expensesTabText, paymentsTab === 'monthly' && styles.activeExpensesTabText]}>Pagamento Mensal</Text>
+          </TouchableOpacity>
         </View>
 
-        <FlatList
-          data={MOCK_PAYMENTS.filter(p => p.year === selectedYear && p.month === selectedMonth)}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <Card style={styles.paymentCard}>
-              <View style={styles.paymentHeader}>
-                <Text style={styles.paymentUser}>{item.userName}</Text>
-                <View style={[styles.paymentStatus, { backgroundColor: getStatusColor(item.status) }]}>
-                  <Text style={styles.paymentStatusText}>{getStatusLabel(item.status)}</Text>
-                </View>
+        {paymentsTab === 'general' ? (
+          <>
+            <View style={styles.searchContainer}>
+              <Input
+                placeholder="Buscar pagamentos..."
+                value={searchPaymentQuery}
+                onChangeText={setSearchPaymentQuery}
+                leftIcon={<Search size={20} color={Colors.text.secondary} />}
+                containerStyle={styles.searchInput}
+              />
+              <TouchableOpacity style={styles.filterButton} onPress={() => setShowPaymentFilterModal(true)}>
+                <Filter size={20} color={Colors.text.primary} />
+              </TouchableOpacity>
+              <Button
+                title="Novo Pagamento"
+                variant="primary"
+                size="small"
+                icon={<Plus size={16} color={Colors.white} />}
+                onPress={() => setIsAddPaymentModalVisible(true)}
+              />
+            </View>
+            <FlatList
+              data={filteredPayments}
+              keyExtractor={item => item.id}
+              renderItem={({ item }) => (
+                <Card style={styles.expenseCard}>
+                  <View style={styles.expenseHeader}>
+                    <Text style={styles.expenseDescription}>{item.memberName}</Text>
+                    <View style={styles.expenseHeaderRight}>
+                      <Text style={[styles.expenseAmount, { color: Colors.primary.main }]}>{formatCurrency(Number(item.amount))}</Text>
+                      <TouchableOpacity
+                        onPress={() => handleDeletePayment(item.id)}
+                        style={styles.deleteButton}
+                      >
+                        <Trash2 size={16} color={Colors.error.main} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <View style={styles.expenseDetails}>
+                    <View style={styles.expenseDetail}>
+                      <Text style={styles.expenseDetailLabel}>Data:</Text>
+                      <Text style={styles.expenseDetailValue}>{formatDate(item.date)}</Text>
+                    </View>
+                    <View style={styles.expenseDetail}>
+                      <Text style={styles.expenseDetailLabel}>Categoria:</Text>
+                      <Text style={styles.expenseDetailValue}>{item.category}</Text>
+                    </View>
+                    {item.observations && (
+                      <View style={styles.expenseDetail}>
+                        <Text style={styles.expenseDetailLabel}>Obs:</Text>
+                        <Text style={styles.expenseDetailValue}>{item.observations}</Text>
+                      </View>
+                    )}
+                  </View>
+                </Card>
+              )}
+              style={styles.expensesList}
+            />
+          </>
+        ) : (
+          <>
+            <View style={styles.monthlyYearSelector}>
+              <TouchableOpacity onPress={() => setSelectedPaymentYear(selectedPaymentYear - 1)} style={styles.periodControl}>
+                <ArrowLeft size={20} color={Colors.text.primary} />
+              </TouchableOpacity>
+              <Text style={styles.periodText}>{selectedPaymentYear}</Text>
+              <TouchableOpacity onPress={() => setSelectedPaymentYear(selectedPaymentYear + 1)} style={styles.periodControl}>
+                <ArrowRight size={20} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.monthButtonsGrid}>
+              <View style={styles.monthColumn}>
+                {firstColumnMonths.map((month, idx) => (
+                  <TouchableOpacity
+                    key={month}
+                    style={[
+                      styles.monthButton,
+                      selectedPaymentMonth === idx && styles.activeMonthButton
+                    ]}
+                    onPress={() => {
+                      setSelectedPaymentMonth(idx);
+                      setShowMonthlyPaymentsModal(true);
+                    }}
+                  >
+                    <Text style={[
+                      styles.monthButtonText,
+                      selectedPaymentMonth === idx && styles.activeMonthButtonText
+                    ]}>
+                      {month}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-              <View style={styles.paymentDetails}>
-                <Text style={styles.paymentAmount}>{formatCurrency(item.amount)}</Text>
-                <Button
-                  title={item.status === 'PAID' ? 'Marcado' : 'Marcar Pago'}
-                  variant={item.status === 'PAID' ? 'text' : 'primary'}
-                  size="small"
-                  disabled={item.status === 'PAID'}
-                  onPress={() => console.log('Mark as paid', item.id)}
-                />
+              <View style={styles.monthColumn}>
+                {secondColumnMonths.map((month, idx) => (
+                  <TouchableOpacity
+                    key={month}
+                    style={[
+                      styles.monthButton,
+                      selectedPaymentMonth === idx + 6 && styles.activeMonthButton
+                    ]}
+                    onPress={() => {
+                      setSelectedPaymentMonth(idx + 6);
+                      setShowMonthlyPaymentsModal(true);
+                    }}
+                  >
+                    <Text style={[
+                      styles.monthButtonText,
+                      selectedPaymentMonth === idx + 6 && styles.activeMonthButtonText
+                    ]}>
+                      {month}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-            </Card>
-          )}
-          style={styles.paymentsList}
-        />
+            </View>
+          </>
+        )}
       </View>
     );
   };
 
   const renderCashFlowTab = () => {
+    // Filtrar despesas do ano selecionado
+    const annualExpenses = expenses.filter(exp => {
+      if (!exp.date) return false;
+      const [year] = exp.date.split('-');
+      return Number(year) === selectedYear;
+    });
+    const totalAnnualExpense = annualExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+
+    // Calcular despesas por categoria
+    const expensesByCategory = annualExpenses.reduce((acc, exp) => {
+      if (!acc[exp.category]) {
+        acc[exp.category] = 0;
+      }
+      acc[exp.category] += exp.amount;
+      return acc;
+    }, {} as { [key: string]: number });
+
+    // Preparar dados para o gráfico
+    const pieData = Object.entries(expensesByCategory)
+      .filter(([_, amount]) => typeof amount === 'number' && amount > 0)
+      .map(([category, amount], index) => ({
+        value: amount,
+        svg: {
+          fill: [
+            Colors.primary.main,
+            Colors.success.main,
+            Colors.warning.main,
+            Colors.error.main,
+            Colors.accent.main,
+            Colors.grey[400],
+            Colors.grey[600],
+            Colors.grey[800],
+          ][index % 8],
+          onPress: () => Alert.alert(category, `Total: ${formatCurrency(amount)}`),
+        },
+        key: `pie-${index}`,
+        arc: { cornerRadius: 5 },
+      }));
+
+    // Debug logs
+    console.log('pieData:', pieData);
+    console.log('expensesByCategory:', expensesByCategory);
+
+    // Calcular receita (pagamentos) do ano selecionado
+    const annualIncome = payments.filter(p => {
+      if (!p.date) return false;
+      const [year] = p.date.split('-');
+      return Number(year) === selectedYear;
+    }).reduce((sum, p) => sum + Number(p.amount), 0);
+
+    // Calcular saldo
+    const annualBalance = annualIncome - totalAnnualExpense;
+
     return (
       <View style={styles.tabContent}>
         <Card style={styles.cashFlowSummary}>
-          <Text style={styles.cashFlowTitle}>Resumo Financeiro</Text>
+          <View style={styles.yearSelector}>
+            <TouchableOpacity onPress={() => setSelectedYear(selectedYear - 1)} style={styles.yearControl}>
+              <ArrowDown size={20} color={Colors.text.primary} />
+            </TouchableOpacity>
+            <Text style={styles.yearText}>{selectedYear}</Text>
+            <TouchableOpacity onPress={() => setSelectedYear(selectedYear + 1)} style={styles.yearControl}>
+              <ArrowUp size={20} color={Colors.text.primary} />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.cashFlowTitle}>Fluxo de Caixa Anual</Text>
           <View style={styles.cashFlowDetails}>
             <View style={styles.cashFlowItem}>
-              <Text style={styles.cashFlowLabel}>Receitas</Text>
-              <Text style={[styles.cashFlowValue, styles.incomeValue]}>
-                {formatCurrency(MOCK_CASH_FLOW.totalIncome)}
-              </Text>
-            </View>
-            <View style={styles.cashFlowItem}>
               <Text style={styles.cashFlowLabel}>Despesas</Text>
-              <Text style={[styles.cashFlowValue, styles.expenseValue]}>
-                {formatCurrency(MOCK_CASH_FLOW.totalExpense)}
+              <Text style={[styles.cashFlowValue, { color: Colors.error.main, fontWeight: 'bold' }]}>
+                {formatCurrency(totalAnnualExpense)}
               </Text>
             </View>
             <View style={styles.cashFlowItem}>
-              <Text style={styles.cashFlowLabel}>Balanço</Text>
-              <Text style={[styles.cashFlowValue, styles.balanceValue]}>
-                {formatCurrency(MOCK_CASH_FLOW.balance)}
+              <Text style={styles.cashFlowLabel}>Receita</Text>
+              <Text style={[styles.cashFlowValue, { color: Colors.success.main, fontWeight: 'bold' }]}>
+                {formatCurrency(annualIncome)}
               </Text>
             </View>
           </View>
-        </Card>
-
-        <Card style={styles.chartCard}>
-          <Text style={styles.chartTitle}>Fluxo de Caixa Mensal</Text>
-          <View style={styles.chartPlaceholder}>
-            <Text style={styles.chartPlaceholderText}>
-              Gráfico será implementado na próxima versão
-            </Text>
+          <View style={{ alignItems: 'center', marginTop: 16 }}>
+            <Text style={[styles.cashFlowLabel, { fontSize: 18 }]}>Saldo</Text>
+            <Text style={[styles.cashFlowValue, { color: Colors.accent.main, fontWeight: 'bold', fontSize: 24 }]}>{formatCurrency(annualBalance)}</Text>
           </View>
         </Card>
-
-        <View style={styles.actionButtons}>
-          <Button
-            title="Exportar Relatório"
-            variant="outlined"
-            onPress={() => console.log('Export report')}
-            style={styles.exportButton}
-          />
-        </View>
+        {/* O gráfico de pizza foi removido daqui */}
       </View>
     );
   };
@@ -802,15 +968,15 @@ export default function FinancesScreen() {
                         style={[
                           styles.monthCell,
                           styles.paymentCell,
-                          monthlyPayments[selectedYear][member.id][month] && styles.paidCell
+                          !!monthlyPayments[selectedYear]?.[member.id]?.[month] && styles.paidCell
                         ]}
                         onPress={() => handlePaymentToggle(member.id, month)}
                       >
                         <Text style={[
                           styles.paymentText,
-                          monthlyPayments[selectedYear][member.id][month] && styles.paidText
+                          !!monthlyPayments[selectedYear]?.[member.id]?.[month] && styles.paidText
                         ]}>
-                          {monthlyPayments[selectedYear][member.id][month] ? '✓' : ''}
+                          {!!monthlyPayments[selectedYear]?.[member.id]?.[month] ? '✓' : ''}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -1025,17 +1191,416 @@ export default function FinancesScreen() {
     );
   };
 
+  const renderAddPaymentModal = () => (
+    <Modal
+      visible={isAddPaymentModalVisible}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setIsAddPaymentModalVisible(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <Card style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Adicionar Pagamento</Text>
+            <TouchableOpacity onPress={() => setIsAddPaymentModalVisible(false)} style={styles.closeButton}>
+              <X size={24} color={Colors.text.primary} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.modalBody}>
+            <Text style={styles.dateInputLabel}>Integrante</Text>
+            <TouchableOpacity
+              style={[styles.dateInput, { padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }]}
+              onPress={() => setShowMemberModal(true)}
+            >
+              <Text style={[styles.dateInputText, { color: newPayment.memberName ? Colors.text.primary : Colors.text.secondary }] }>
+                {newPayment.memberName || 'Selecionar Integrante'}
+              </Text>
+              <ArrowDown size={18} color={Colors.text.secondary} />
+            </TouchableOpacity>
+            <Input
+              label="Valor"
+              value={newPayment.amount}
+              onChangeText={text => setNewPayment({ ...newPayment, amount: text })}
+              placeholder="0,00"
+              keyboardType="numeric"
+              leftIcon={<DollarSign size={20} color={Colors.text.secondary} />}
+            />
+            <TouchableOpacity
+              style={[styles.dateInputContainer, { marginTop: 16 }]}
+              onPress={() => setShowPaymentDateCalendar(true)}
+            >
+              <Text style={styles.dateInputLabel}>Data</Text>
+              <View style={styles.dateInput}>
+                <Text style={styles.dateInputText}>
+                  {newPayment.date ? formatDate(newPayment.date) : 'Selecione uma data'}
+                </Text>
+                <Calendar size={20} color={Colors.text.secondary} />
+              </View>
+            </TouchableOpacity>
+            {showPaymentDateCalendar && (
+              <View style={{ marginBottom: 16 }}>
+                <CalendarView
+                  onDayPress={(day: { dateString: string; day: number; month: number; year: number; timestamp: number; }) => {
+                    setNewPayment({ ...newPayment, date: day.dateString });
+                    setShowPaymentDateCalendar(false);
+                  }}
+                  markedDates={newPayment.date ? { [newPayment.date]: { selected: true, selectedColor: Colors.primary.main } } : {}}
+                  theme={{
+                    todayTextColor: Colors.primary.main,
+                    selectedDayBackgroundColor: Colors.primary.main,
+                    arrowColor: Colors.primary.main,
+                  }}
+                />
+              </View>
+            )}
+            <TouchableOpacity
+              style={[styles.dateInput, { padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 }]}
+              onPress={() => setShowPaymentCategoryModal(true)}
+            >
+              <Text style={[styles.dateInputText, { color: newPayment.category ? Colors.text.primary : Colors.text.secondary }] }>
+                {newPayment.category || 'Selecionar Categoria'}
+              </Text>
+              <ArrowDown size={18} color={Colors.text.secondary} />
+            </TouchableOpacity>
+            <Input
+              label="Observações"
+              value={newPayment.observations}
+              onChangeText={text => setNewPayment({ ...newPayment, observations: text })}
+              placeholder="Ex: Pagamento referente a..."
+              multiline
+              containerStyle={{ marginTop: 16 }}
+            />
+          </View>
+          <View style={styles.modalFooter}>
+            <Button
+              title="Cancelar"
+              variant="outlined"
+              onPress={() => setIsAddPaymentModalVisible(false)}
+              style={{ ...styles.modalButton, marginRight: 12 }}
+            />
+            <Button
+              title="Adicionar"
+              variant="primary"
+              onPress={() => {
+                if (!newPayment.memberId || !newPayment.amount || !newPayment.date || !newPayment.category) return;
+                setPayments([
+                  { ...newPayment, id: Date.now().toString() },
+                  ...payments,
+                ]);
+                setNewPayment({ memberId: '', memberName: '', amount: '', date: '', category: '', observations: '' });
+                setIsAddPaymentModalVisible(false);
+              }}
+              style={styles.modalButton}
+            />
+          </View>
+        </Card>
+        {/* Modal ActionSheet Integrante */}
+        <Modal
+          visible={showMemberModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowMemberModal(false)}
+        >
+          <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' }} activeOpacity={1} onPress={() => setShowMemberModal(false)} />
+          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: Colors.background.paper, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 }}>
+            {MEMBERS.map(member => (
+              <TouchableOpacity
+                key={member.id}
+                onPress={() => {
+                  setNewPayment({ ...newPayment, memberId: member.id, memberName: member.name });
+                  setShowMemberModal(false);
+                }}
+                style={{ paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border.light }}
+              >
+                <Text style={{ fontSize: 16, color: newPayment.memberId === member.id ? Colors.primary.main : Colors.text.primary }}>{member.name}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity onPress={() => setShowMemberModal(false)} style={{ paddingVertical: 16 }}>
+              <Text style={{ fontSize: 16, color: Colors.error.main, textAlign: 'center' }}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </Modal>
+        {/* Modal ActionSheet Categoria */}
+        <Modal
+          visible={showPaymentCategoryModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowPaymentCategoryModal(false)}
+        >
+          <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' }} activeOpacity={1} onPress={() => setShowPaymentCategoryModal(false)} />
+          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: Colors.background.paper, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 }}>
+            {fixedCategories.map(cat => (
+              <TouchableOpacity
+                key={cat}
+                onPress={() => {
+                  setNewPayment({ ...newPayment, category: cat });
+                  setShowPaymentCategoryModal(false);
+                }}
+                style={{ paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border.light }}
+              >
+                <Text style={{ fontSize: 16, color: newPayment.category === cat ? Colors.primary.main : Colors.text.primary }}>{cat}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity onPress={() => setShowPaymentCategoryModal(false)} style={{ paddingVertical: 16 }}>
+              <Text style={{ fontSize: 16, color: Colors.error.main, textAlign: 'center' }}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </Modal>
+      </View>
+    </Modal>
+  );
+
+  const renderMonthlyPaymentsModal = () => {
+    const monthlyPaymentsList = payments.filter(payment => {
+      if (!payment.date) return false;
+      const [year, month] = payment.date.split('-');
+      return (
+        Number(year) === selectedPaymentYear &&
+        Number(month) === selectedPaymentMonth + 1
+      );
+    });
+    const totalMonthly = monthlyPaymentsList.reduce((sum, p) => sum + Number(p.amount), 0);
+    return (
+      <Modal
+        visible={showMonthlyPaymentsModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowMonthlyPaymentsModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Card style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Pagamentos de {MONTHS_PT[selectedPaymentMonth]} {selectedPaymentYear}</Text>
+              <TouchableOpacity
+                onPress={() => setShowMonthlyPaymentsModal(false)}
+                style={styles.closeButton}
+              >
+                <X size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalBody}>
+              <View style={{ marginBottom: 16 }}>
+                <Text style={{ fontFamily: FontFamily.bold, fontSize: 16, color: Colors.text.primary }}>
+                  Total do mês: {formatCurrency(totalMonthly)}
+                </Text>
+              </View>
+              {monthlyPaymentsList.length > 0 ? (
+                <FlatList
+                  data={monthlyPaymentsList}
+                  keyExtractor={item => item.id}
+                  renderItem={({ item }) => (
+                    <Card style={styles.expenseCard}>
+                      <View style={styles.expenseHeader}>
+                        <Text style={styles.expenseDescription}>{item.memberName}</Text>
+                        <View style={styles.expenseHeaderRight}>
+                          <Text style={[styles.expenseAmount, { color: Colors.primary.main }]}>{formatCurrency(Number(item.amount))}</Text>
+                          <TouchableOpacity
+                            onPress={() => handleDeletePayment(item.id)}
+                            style={styles.deleteButton}
+                          >
+                            <Trash2 size={16} color={Colors.error.main} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                      <View style={styles.expenseDetails}>
+                        <View style={styles.expenseDetail}>
+                          <Text style={styles.expenseDetailLabel}>Data:</Text>
+                          <Text style={styles.expenseDetailValue}>{formatDate(item.date)}</Text>
+                        </View>
+                        <View style={styles.expenseDetail}>
+                          <Text style={styles.expenseDetailLabel}>Categoria:</Text>
+                          <Text style={styles.expenseDetailValue}>{item.category}</Text>
+                        </View>
+                        {item.observations && (
+                          <View style={styles.expenseDetail}>
+                            <Text style={styles.expenseDetailLabel}>Obs:</Text>
+                            <Text style={styles.expenseDetailValue}>{item.observations}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </Card>
+                  )}
+                  style={styles.expensesList}
+                />
+              ) : (
+                <View style={styles.emptyStateContainer}>
+                  <Text style={styles.emptyStateText}>
+                    Nenhum pagamento registrado para este mês
+                  </Text>
+                </View>
+              )}
+            </View>
+          </Card>
+        </View>
+      </Modal>
+    );
+  };
+
   // Persistência com AsyncStorage
   useEffect(() => {
     (async () => {
       const saved = await AsyncStorage.getItem('expenses');
       if (saved) setExpenses(JSON.parse(saved));
+      const savedPayments = await AsyncStorage.getItem('payments');
+      if (savedPayments) {
+        setPayments(JSON.parse(savedPayments));
+      } else {
+        setPayments(MOCK_PAYMENTS); // Só usa o mock se não houver nada salvo
+      }
     })();
   }, []);
 
   useEffect(() => {
     AsyncStorage.setItem('expenses', JSON.stringify(expenses));
   }, [expenses]);
+
+  useEffect(() => {
+    AsyncStorage.setItem('payments', JSON.stringify(payments));
+  }, [payments]);
+
+  // Adicione a função de confirmação para deletar pagamentos
+  const handleDeletePayment = (paymentId: string) => {
+    Alert.alert(
+      'Confirmar exclusão',
+      'Tem certeza que deseja excluir este pagamento?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: () => {
+            setPayments(payments.filter(payment => payment.id !== paymentId));
+          }
+        },
+      ]
+    );
+  };
+
+  // Adicione o modal de filtro de pagamentos, igual ao de despesas
+  const renderPaymentFilterModal = () => (
+    <Modal
+      visible={showPaymentFilterModal}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setShowPaymentFilterModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <Card style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Filtrar Pagamentos</Text>
+            <TouchableOpacity onPress={() => setShowPaymentFilterModal(false)} style={styles.closeButton}>
+              <X size={24} color={Colors.text.primary} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.modalBody}>
+            <TouchableOpacity style={styles.dateInputContainer} onPress={() => setShowCalendar('start')}>
+              <Text style={styles.dateInputLabel}>Data Inicial</Text>
+              <View style={styles.dateInput}>
+                <Text style={styles.dateInputText}>{filterPaymentStartDate ? formatDate(filterPaymentStartDate) : 'Selecione'}</Text>
+                <Calendar size={20} color={Colors.text.secondary} />
+              </View>
+            </TouchableOpacity>
+            {showCalendar === 'start' && (
+              <View style={{ marginBottom: 16 }}>
+                <CalendarView
+                  onDayPress={(day: { dateString: string }) => {
+                    setFilterPaymentStartDate(day.dateString);
+                    setShowCalendar(null);
+                  }}
+                  markedDates={filterPaymentStartDate ? { [filterPaymentStartDate]: { selected: true, selectedColor: Colors.primary.main } } : {}}
+                  theme={{
+                    todayTextColor: Colors.primary.main,
+                    selectedDayBackgroundColor: Colors.primary.main,
+                    arrowColor: Colors.primary.main,
+                  }}
+                />
+              </View>
+            )}
+            <TouchableOpacity style={styles.dateInputContainer} onPress={() => setShowCalendar('end')}>
+              <Text style={styles.dateInputLabel}>Data Final</Text>
+              <View style={styles.dateInput}>
+                <Text style={styles.dateInputText}>{filterPaymentEndDate ? formatDate(filterPaymentEndDate) : 'Selecione'}</Text>
+                <Calendar size={20} color={Colors.text.secondary} />
+              </View>
+            </TouchableOpacity>
+            {showCalendar === 'end' && (
+              <View style={{ marginBottom: 16 }}>
+                <CalendarView
+                  onDayPress={(day: { dateString: string }) => {
+                    setFilterPaymentEndDate(day.dateString);
+                    setShowCalendar(null);
+                  }}
+                  markedDates={filterPaymentEndDate ? { [filterPaymentEndDate]: { selected: true, selectedColor: Colors.primary.main } } : {}}
+                  theme={{
+                    todayTextColor: Colors.primary.main,
+                    selectedDayBackgroundColor: Colors.primary.main,
+                    arrowColor: Colors.primary.main,
+                  }}
+                />
+              </View>
+            )}
+            <View style={{ marginBottom: 24 }}>
+              <Text style={styles.dateInputLabel}>Categoria</Text>
+              <TouchableOpacity
+                style={[styles.dateInput, { padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                onPress={() => setShowPaymentCategoryModal(true)}
+              >
+                <Text style={[styles.dateInputText, { color: filterPaymentCategory ? Colors.text.primary : Colors.text.secondary }] }>
+                  {filterPaymentCategory || 'Selecionar Categoria'}
+                </Text>
+                <ArrowDown size={18} color={Colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+          <View style={styles.modalFooter}>
+            <Button title="Limpar" variant="outlined" onPress={() => { setFilterPaymentStartDate(null); setFilterPaymentEndDate(null); setFilterPaymentCategory(''); }} style={{ ...styles.modalButton, marginRight: 12 }} />
+            <Button title="Aplicar" variant="primary" onPress={() => setShowPaymentFilterModal(false)} style={styles.modalButton} />
+          </View>
+        </Card>
+      </View>
+      <Modal
+        visible={showPaymentCategoryModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowPaymentCategoryModal(false)}
+      >
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' }} activeOpacity={1} onPress={() => setShowPaymentCategoryModal(false)} />
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: Colors.background.paper, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 }}>
+          <TouchableOpacity
+            onPress={() => {
+              setFilterPaymentCategory('');
+              setShowPaymentCategoryModal(false);
+            }}
+            style={{ paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border.light }}
+          >
+            <Text style={{ fontSize: 16, color: filterPaymentCategory === '' ? Colors.primary.main : Colors.text.primary }}>Todas</Text>
+          </TouchableOpacity>
+          {fixedCategories.map(cat => (
+            <TouchableOpacity
+              key={cat}
+              onPress={() => {
+                setFilterPaymentCategory(cat);
+                setShowPaymentCategoryModal(false);
+              }}
+              style={{ paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border.light }}
+            >
+              <Text style={{ fontSize: 16, color: filterPaymentCategory === cat ? Colors.primary.main : Colors.text.primary }}>{cat}</Text>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity onPress={() => setShowPaymentCategoryModal(false)} style={{ paddingVertical: 16 }}>
+            <Text style={{ fontSize: 16, color: Colors.error.main, textAlign: 'center' }}>Cancelar</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+    </Modal>
+  );
+
+  // Sempre que a aba ativa for 'cashflow', defina selectedYear para o ano atual
+  useEffect(() => {
+    if (activeTab === 'cashflow') {
+      setSelectedYear(new Date().getFullYear());
+    }
+  }, [activeTab]);
 
   return (
     <View style={styles.container}>
@@ -1106,6 +1671,9 @@ export default function FinancesScreen() {
       {renderAddExpenseModal()}
       {renderFilterModal()}
       {renderMonthlyExpensesModal()}
+      {renderAddPaymentModal()}
+      {renderMonthlyPaymentsModal()}
+      {renderPaymentFilterModal()}
     </View>
   );
 }
@@ -1309,6 +1877,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: Colors.text.primary,
     marginBottom: Spacing.m,
+    textAlign: 'center',
   },
   cashFlowDetails: {
     flexDirection: 'row',
@@ -1642,5 +2211,35 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.medium,
     fontSize: 14,
     color: Colors.text.secondary,
+  },
+  pieChartContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing.m,
+  },
+  pieChart: {
+    height: 200,
+    width: 200,
+  },
+  pieLegendContainer: {
+    flex: 1,
+    marginLeft: Spacing.m,
+  },
+  pieLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.s,
+  },
+  pieLegendBox: {
+    width: 16,
+    height: 16,
+    borderRadius: BorderRadius.round,
+    marginRight: Spacing.s,
+  },
+  pieLegendText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 14,
+    color: Colors.text.primary,
   },
 });

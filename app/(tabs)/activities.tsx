@@ -353,17 +353,19 @@ export default function ActivitiesScreen() {
                   ))}
                 </ScrollView>
 
-                <Button
-                  title="Adicionar Tarefa"
-                  variant="outlined"
-                  size="small"
-                  onPress={() => {
-                    setSelectedDate(new Date());
-                    setShowAddModal(true);
-                  }}
-                  icon={<Plus size={16} color={Colors.primary.main} />}
-                  style={styles.addTaskButton}
-                />
+                {status === 'TODO' && (
+                  <Button
+                    title="Adicionar Tarefa"
+                    variant="outlined"
+                    size="small"
+                    onPress={() => {
+                      setSelectedDate(new Date());
+                      setShowAddModal(true);
+                    }}
+                    icon={<Plus size={16} color={Colors.primary.main} />}
+                    style={styles.addTaskButton}
+                  />
+                )}
               </View>
             ))}
           </ScrollView>

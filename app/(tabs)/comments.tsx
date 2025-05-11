@@ -19,12 +19,28 @@ import {
   AtSign,
   Trash2
 } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import Colors from '../../constants/Colors';
 import Spacing, { BorderRadius } from '../../constants/Spacing';
 import { FontFamily } from '../../constants/Typography';
 import Input from '../../components/common/Input';
 import { useAuth } from '../../hooks/useAuth';
+
+interface Comment {
+  id: string;
+  content: string;
+  createdAt: string;
+  userId: string;
+  userName: string;
+  userImage: string;
+  likes: number;
+  replies: number;
+  hasImage: boolean;
+  imageUrl?: string;
+  replyTo?: string;
+  children?: Comment[];
+}
 
 // Mock comments data
 const MOCK_COMMENTS = [
@@ -88,18 +104,24 @@ const MOCK_COMMENTS = [
 
 export default function CommentsScreen() {
   const { user } = useAuth();
-  const [comments, setComments] = useState(MOCK_COMMENTS);
+  const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
 
   useEffect(() => {
-    // Simulate fetching comments from an API
-    setRefreshing(true);
-    setTimeout(() => {
-      setComments(MOCK_COMMENTS);
+    (async () => {
+      setRefreshing(true);
+      const saved = await AsyncStorage.getItem('comments');
+      if (saved) setComments(JSON.parse(saved));
       setRefreshing(false);
-    }, 1000);
+    })();
   }, []);
+
+  useEffect(() => {
+    AsyncStorage.setItem('comments', JSON.stringify(comments));
+  }, [comments]);
 
   const handleAddComment = () => {
     if (!newComment.trim()) return;
@@ -186,6 +208,56 @@ export default function CommentsScreen() {
     );
   };
 
+  const handleAddReply = (parentId: string) => {
+    if (!replyText.trim()) return;
+    const reply: Comment = {
+      id: Date.now().toString(),
+      content: replyText,
+      createdAt: new Date().toISOString(),
+      userId: user?.id || '1',
+      userName: user?.name || 'Usuário',
+      userImage: user?.profileImage || 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg',
+      likes: 0,
+      replies: 0,
+      hasImage: false,
+      replyTo: parentId,
+    };
+    setComments(prev => prev.map(comment => {
+      if (comment.id === parentId) {
+        return {
+          ...comment,
+          replies: (comment.replies || 0) + 1,
+          children: comment.children ? [reply, ...comment.children] : [reply],
+        };
+      }
+      return comment;
+    }));
+    setReplyingTo(null);
+    setReplyText('');
+  };
+
+  const renderReplies = (children?: Comment[]) => {
+    if (!children || children.length === 0) return null;
+    return (
+      <View style={{ marginLeft: 32, marginTop: 8 }}>
+        {children.map(reply => (
+          <View key={reply.id} style={styles.commentContainer}>
+            <View style={styles.commentHeader}>
+              <Image source={{ uri: reply.userImage }} style={styles.userImage} />
+              <View style={styles.commentHeaderInfo}>
+                <Text style={styles.userName}>{reply.userName}</Text>
+                <Text style={styles.timeAgo}>{formatTimeAgo(reply.createdAt)}</Text>
+              </View>
+            </View>
+            <View style={styles.commentContent}>
+              <Text style={styles.commentText}>{highlightMentions(reply.content)}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
   const renderComment = ({ item }: { item: typeof comments[0] }) => (
     <View style={styles.commentContainer}>
       <View style={styles.commentHeader}>
@@ -225,11 +297,33 @@ export default function CommentsScreen() {
           <Text style={styles.actionText}>{item.likes}</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.actionButton}>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={() => setReplyingTo(item.id)}
+        >
           <MessageSquare size={16} color={Colors.text.secondary} />
           <Text style={styles.actionText}>{item.replies}</Text>
         </TouchableOpacity>
       </View>
+      {replyingTo === item.id && (
+        <View style={{ marginTop: 8 }}>
+          <Input
+            placeholder="Responder..."
+            value={replyText}
+            onChangeText={setReplyText}
+            containerStyle={styles.input}
+          />
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+            <TouchableOpacity onPress={() => setReplyingTo(null)} style={{ marginRight: 8 }}>
+              <Text style={{ color: Colors.text.secondary }}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleAddReply(item.id)}>
+              <Text style={{ color: Colors.primary.main, fontWeight: 'bold' }}>Comentar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+      {renderReplies(item.children)}
     </View>
   );
 
