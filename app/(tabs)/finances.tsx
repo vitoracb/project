@@ -25,6 +25,7 @@ import { FontFamily } from '../../constants/Typography';
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
 import Input from '../../components/common/Input';
+import { Payment as BasePayment, PaymentStatus } from '../../types';
 
 // Mock data for payments
 const MOCK_PAYMENTS = [
@@ -149,6 +150,13 @@ interface Expense {
   receipt: string | null;
 }
 
+type AppPayment = Partial<BasePayment> & {
+  memberName?: string;
+  category?: string;
+  date?: string;
+  observations?: string;
+};
+
 export default function FinancesScreen() {
   const [activeTab, setActiveTab] = useState<FinanceTab>('expenses');
   const [searchQuery, setSearchQuery] = useState('');
@@ -186,7 +194,7 @@ export default function FinancesScreen() {
   const [showMonthlyExpensesModal, setShowMonthlyExpensesModal] = useState(false);
   const [showFilterCategoryModal, setShowFilterCategoryModal] = useState(false);
   const [isAddPaymentModalVisible, setIsAddPaymentModalVisible] = useState(false);
-  const [payments, setPayments] = useState<any[]>([]);
+  const [payments, setPayments] = useState<AppPayment[]>([]);
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [showPaymentCategoryModal, setShowPaymentCategoryModal] = useState(false);
   const [showPaymentDateCalendar, setShowPaymentDateCalendar] = useState(false);
@@ -687,8 +695,8 @@ export default function FinancesScreen() {
       if (!payment.date) return false;
       const [year, month] = payment.date.split('-');
       return (
-        Number(year) === selectedPaymentYear &&
-        Number(month) === selectedPaymentMonth + 1
+        Number(year ?? 0) === selectedPaymentYear &&
+        Number(month ?? 0) === selectedPaymentMonth + 1
       );
     });
 
@@ -732,13 +740,13 @@ export default function FinancesScreen() {
             </View>
             <FlatList
               data={filteredPayments}
-              keyExtractor={item => item.id}
+              keyExtractor={(item, index) => item.id ? String(item.id) : String(index)}
               renderItem={({ item }) => (
                 <Card style={styles.expenseCard}>
                   <View style={styles.expenseHeader}>
-                    <Text style={styles.expenseDescription}>{item.memberName}</Text>
+                    <Text style={styles.expenseDescription}>{String(item.memberName ?? '')}</Text>
                     <View style={styles.expenseHeaderRight}>
-                      <Text style={[styles.expenseAmount, { color: Colors.primary.main }]}>{formatCurrency(Number(item.amount))}</Text>
+                      <Text style={[styles.expenseAmount, { color: Colors.primary.main }]}>{formatCurrency(Number(item.amount ?? 0))}</Text>
                       <TouchableOpacity
                         onPress={() => handleDeletePayment(item.id)}
                         style={styles.deleteButton}
@@ -750,16 +758,16 @@ export default function FinancesScreen() {
                   <View style={styles.expenseDetails}>
                     <View style={styles.expenseDetail}>
                       <Text style={styles.expenseDetailLabel}>Data:</Text>
-                      <Text style={styles.expenseDetailValue}>{formatDate(item.date)}</Text>
+                      <Text style={styles.expenseDetailValue}>{formatDate(String(item.date ?? ''))}</Text>
                     </View>
                     <View style={styles.expenseDetail}>
                       <Text style={styles.expenseDetailLabel}>Categoria:</Text>
-                      <Text style={styles.expenseDetailValue}>{item.category}</Text>
+                      <Text style={styles.expenseDetailValue}>{String(item.category ?? '')}</Text>
                     </View>
                     {item.observations && (
                       <View style={styles.expenseDetail}>
                         <Text style={styles.expenseDetailLabel}>Obs:</Text>
-                        <Text style={styles.expenseDetailValue}>{item.observations}</Text>
+                        <Text style={styles.expenseDetailValue}>{String(item.observations ?? '')}</Text>
                       </View>
                     )}
                   </View>
@@ -878,9 +886,9 @@ export default function FinancesScreen() {
     // Calcular receita (pagamentos) do ano selecionado
     const annualIncome = payments.filter(p => {
       if (!p.date) return false;
-      const [year] = p.date.split('-');
+      const [year] = String(p.date ?? '').split('-');
       return Number(year) === selectedYear;
-    }).reduce((sum, p) => sum + Number(p.amount), 0);
+    }).reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
 
     // Calcular saldo
     const annualBalance = annualIncome - totalAnnualExpense;
@@ -968,15 +976,15 @@ export default function FinancesScreen() {
                         style={[
                           styles.monthCell,
                           styles.paymentCell,
-                          !!monthlyPayments[selectedYear]?.[member.id]?.[month] && styles.paidCell
+                          Boolean(monthlyPayments[selectedYear]?.[member.id]?.[month] ?? false) && styles.paidCell
                         ]}
                         onPress={() => handlePaymentToggle(member.id, month)}
                       >
                         <Text style={[
                           styles.paymentText,
-                          !!monthlyPayments[selectedYear]?.[member.id]?.[month] && styles.paidText
+                          Boolean(monthlyPayments[selectedYear]?.[member.id]?.[month] ?? false) && styles.paidText
                         ]}>
-                          {!!monthlyPayments[selectedYear]?.[member.id]?.[month] ? '✓' : ''}
+                          {Boolean(monthlyPayments[selectedYear]?.[member.id]?.[month] ?? false) ? '✓' : ''}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -1283,8 +1291,21 @@ export default function FinancesScreen() {
               variant="primary"
               onPress={() => {
                 if (!newPayment.memberId || !newPayment.amount || !newPayment.date || !newPayment.category) return;
+                const dateStr = String(newPayment.date ?? '');
+                const dateObj = new Date(dateStr);
                 setPayments([
-                  { ...newPayment, id: Date.now().toString() },
+                  {
+                    ...newPayment,
+                    id: Date.now().toString(),
+                    year: dateObj.getFullYear(),
+                    month: dateObj.getMonth() + 1,
+                    status: PaymentStatus.PAID,
+                    dueDate: dateStr,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    amount: Number(newPayment.amount),
+                    date: dateStr,
+                  },
                   ...payments,
                 ]);
                 setNewPayment({ memberId: '', memberName: '', amount: '', date: '', category: '', observations: '' });
@@ -1353,13 +1374,13 @@ export default function FinancesScreen() {
   const renderMonthlyPaymentsModal = () => {
     const monthlyPaymentsList = payments.filter(payment => {
       if (!payment.date) return false;
-      const [year, month] = payment.date.split('-');
+      const [year, month] = String(payment.date ?? '').split('-');
       return (
-        Number(year) === selectedPaymentYear &&
-        Number(month) === selectedPaymentMonth + 1
+        Number(year ?? 0) === selectedPaymentYear &&
+        Number(month ?? 0) === selectedPaymentMonth + 1
       );
     });
-    const totalMonthly = monthlyPaymentsList.reduce((sum, p) => sum + Number(p.amount), 0);
+    const totalMonthly = monthlyPaymentsList.reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
     return (
       <Modal
         visible={showMonthlyPaymentsModal}
@@ -1387,13 +1408,13 @@ export default function FinancesScreen() {
               {monthlyPaymentsList.length > 0 ? (
                 <FlatList
                   data={monthlyPaymentsList}
-                  keyExtractor={item => item.id}
+                  keyExtractor={(item, index) => item.id ? String(item.id) : String(index)}
                   renderItem={({ item }) => (
                     <Card style={styles.expenseCard}>
                       <View style={styles.expenseHeader}>
-                        <Text style={styles.expenseDescription}>{item.memberName}</Text>
+                        <Text style={styles.expenseDescription}>{String(item.memberName ?? '')}</Text>
                         <View style={styles.expenseHeaderRight}>
-                          <Text style={[styles.expenseAmount, { color: Colors.primary.main }]}>{formatCurrency(Number(item.amount))}</Text>
+                          <Text style={[styles.expenseAmount, { color: Colors.primary.main }]}>{formatCurrency(Number(item.amount ?? 0))}</Text>
                           <TouchableOpacity
                             onPress={() => handleDeletePayment(item.id)}
                             style={styles.deleteButton}
@@ -1405,16 +1426,16 @@ export default function FinancesScreen() {
                       <View style={styles.expenseDetails}>
                         <View style={styles.expenseDetail}>
                           <Text style={styles.expenseDetailLabel}>Data:</Text>
-                          <Text style={styles.expenseDetailValue}>{formatDate(item.date)}</Text>
+                          <Text style={styles.expenseDetailValue}>{formatDate(item.date ? String(item.date) : '')}</Text>
                         </View>
                         <View style={styles.expenseDetail}>
                           <Text style={styles.expenseDetailLabel}>Categoria:</Text>
-                          <Text style={styles.expenseDetailValue}>{item.category}</Text>
+                          <Text style={styles.expenseDetailValue}>{String(item.category ?? '')}</Text>
                         </View>
                         {item.observations && (
                           <View style={styles.expenseDetail}>
                             <Text style={styles.expenseDetailLabel}>Obs:</Text>
-                            <Text style={styles.expenseDetailValue}>{item.observations}</Text>
+                            <Text style={styles.expenseDetailValue}>{String(item.observations ?? '')}</Text>
                           </View>
                         )}
                       </View>
@@ -1439,23 +1460,47 @@ export default function FinancesScreen() {
   // Persistência com AsyncStorage
   useEffect(() => {
     (async () => {
-      const saved = await AsyncStorage.getItem('expenses');
-      if (saved) setExpenses(JSON.parse(saved));
-      const savedPayments = await AsyncStorage.getItem('payments');
-      if (savedPayments) {
-        setPayments(JSON.parse(savedPayments));
-      } else {
-        setPayments(MOCK_PAYMENTS); // Só usa o mock se não houver nada salvo
+      try {
+        const saved = await AsyncStorage.getItem('expenses');
+        if (saved) {
+          try {
+            setExpenses(JSON.parse(saved));
+          } catch (e) {
+            console.warn('Erro ao fazer parse das despesas:', e);
+            setExpenses([]);
+          }
+        }
+        const savedPayments = await AsyncStorage.getItem('payments');
+        if (savedPayments) {
+          try {
+            setPayments(JSON.parse(savedPayments));
+          } catch (e) {
+            console.warn('Erro ao fazer parse dos pagamentos:', e);
+            setPayments([]);
+          }
+        } else {
+          setPayments(MOCK_PAYMENTS.map(p => ({ ...p, status: PaymentStatus.PAID })));
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar dados do AsyncStorage:', err);
       }
     })();
   }, []);
 
   useEffect(() => {
-    AsyncStorage.setItem('expenses', JSON.stringify(expenses));
+    try {
+      AsyncStorage.setItem('expenses', JSON.stringify(expenses));
+    } catch (err) {
+      console.warn('Erro ao salvar despesas:', err);
+    }
   }, [expenses]);
 
   useEffect(() => {
-    AsyncStorage.setItem('payments', JSON.stringify(payments));
+    try {
+      AsyncStorage.setItem('payments', JSON.stringify(payments));
+    } catch (err) {
+      console.warn('Erro ao salvar pagamentos:', err);
+    }
   }, [payments]);
 
   // Adicione a função de confirmação para deletar pagamentos
