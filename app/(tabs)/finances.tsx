@@ -18,6 +18,7 @@ import { Calendar as CalendarView } from 'react-native-calendars';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // @ts-ignore
 import { PieChart } from 'react-native-svg-charts';
+import { useLocalSearchParams } from 'expo-router';
 
 import Colors from '../../constants/Colors';
 import Spacing, { BorderRadius } from '../../constants/Spacing';
@@ -158,6 +159,7 @@ type AppPayment = Partial<BasePayment> & {
 };
 
 export default function FinancesScreen() {
+  const params = useLocalSearchParams();
   const [activeTab, setActiveTab] = useState<FinanceTab>('expenses');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedYear, setSelectedYear] = useState(2024);
@@ -1646,6 +1648,12 @@ export default function FinancesScreen() {
       setSelectedYear(new Date().getFullYear());
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (params.tab && typeof params.tab === 'string') {
+      setActiveTab(params.tab as FinanceTab);
+    }
+  }, [params.tab]);
 
   return (
     <View style={styles.container}>

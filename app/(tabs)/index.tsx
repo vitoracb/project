@@ -1,14 +1,17 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   StyleSheet, 
   View, 
   Text, 
   ScrollView, 
   Image, 
-  TouchableOpacity 
+  TouchableOpacity,
+  Modal,
+  TextInput
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { ChartBar as BarChart, Calendar, Clock, DollarSign, FileText, MessageSquare, Briefcase, Bell } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import Colors from '../../constants/Colors';
 import Spacing, { BorderRadius } from '../../constants/Spacing';
@@ -25,11 +28,56 @@ export default function DashboardScreen() {
     { id: '3', title: 'Novo documento', description: 'João adicionou um novo mapa da propriedade', type: 'document' },
   ];
 
-  const recentTasks = [
-    { id: '1', title: 'Manutenção da cerca', status: 'pending', dueDate: '15/08/2023' },
-    { id: '2', title: 'Plantio de milho', status: 'in-progress', dueDate: '20/08/2023' },
-    { id: '3', title: 'Colheita de café', status: 'completed', dueDate: '10/08/2023' },
-  ];
+  const [recentTasks, setRecentTasks] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [financeYear, setFinanceYear] = useState(new Date().getFullYear());
+  const [showAddEventModal, setShowAddEventModal] = useState(false);
+  const [newEvent, setNewEvent] = useState({ title: '', date: '', time: '' });
+  const [events, setEvents] = useState<any[]>([]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('Tela inicial ganhou foco, recarregando tarefas recentes...');
+      (async () => {
+        const data = await AsyncStorage.getItem('user_tasks');
+        if (data) {
+          const tasks = JSON.parse(data);
+          // Ordena por id (timestamp) decrescente e pega as 3 mais recentes
+          const sorted = [...tasks].sort((a, b) => Number(b.id) - Number(a.id));
+          setRecentTasks(sorted.slice(0, 3));
+        } else {
+          setRecentTasks([]);
+        }
+      })();
+    }, [])
+  );
+
+  useFocusEffect(
+    React.useCallback(() => {
+      (async () => {
+        const expensesData = await AsyncStorage.getItem('expenses');
+        setExpenses(expensesData ? JSON.parse(expensesData) : []);
+        const paymentsData = await AsyncStorage.getItem('payments');
+        setPayments(paymentsData ? JSON.parse(paymentsData) : []);
+      })();
+    }, [])
+  );
+
+  // Calcular receitas, despesas e saldo do ano atual
+  const totalExpense = expenses.filter(e => {
+    if (!e.date) return false;
+    const [year] = String(e.date).split('-');
+    return Number(year) === financeYear;
+  }).reduce((sum, e) => sum + Number(e.amount ?? 0), 0);
+
+  const totalIncome = payments.filter(p => {
+    if (!p.date) return false;
+    const [year] = String(p.date).split('-');
+    return Number(year) === financeYear;
+  }).reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
+
+  const balance = totalIncome - totalExpense;
 
   const upcomingEvents = [
     { id: '1', title: 'Reunião de proprietários', date: '15/08/2023', time: '15:00' },
@@ -65,6 +113,23 @@ export default function DashboardScreen() {
   const navigateToModule = (module: string) => {
     router.push(`/(tabs)/${module}`);
   };
+
+  // Carregar eventos do AsyncStorage
+  useEffect(() => {
+    (async () => {
+      const data = await AsyncStorage.getItem('user_events');
+      if (data) {
+        setEvents(JSON.parse(data));
+      } else {
+        setEvents([]);
+      }
+    })();
+  }, []);
+
+  // Salvar eventos sempre que mudar
+  useEffect(() => {
+    AsyncStorage.setItem('user_events', JSON.stringify(events));
+  }, [events]);
 
   return (
     <ScrollView style={styles.container}>
@@ -153,7 +218,7 @@ export default function DashboardScreen() {
         <View style={[styles.section, styles.halfSection]}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Tarefas Recentes</Text>
-            <TouchableOpacity onPress={() => navigateToModule('activities')}>
+            <TouchableOpacity style={{ paddingHorizontal: 8, paddingVertical: 4 }} onPress={() => navigateToModule('activities')}>
               <Text style={styles.seeAllText}>Ver todas</Text>
             </TouchableOpacity>
           </View>
@@ -171,7 +236,7 @@ export default function DashboardScreen() {
               </View>
               <View style={styles.taskFooter}>
                 <Clock size={14} color={Colors.text.secondary} />
-                <Text style={styles.taskDueDate}>Vencimento: {task.dueDate}</Text>
+                <Text style={styles.taskDueDate}>{task.dueDate}</Text>
               </View>
             </Card>
           ))}
@@ -180,12 +245,12 @@ export default function DashboardScreen() {
         <View style={[styles.section, styles.halfSection]}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Próximos Eventos</Text>
-            <TouchableOpacity onPress={() => navigateToModule('activities')}>
-              <Text style={styles.seeAllText}>Ver todos</Text>
+            <TouchableOpacity onPress={() => setShowAddEventModal(true)}>
+              <Text style={styles.seeAllText}>Adicionar Evento</Text>
             </TouchableOpacity>
           </View>
           
-          {upcomingEvents.map(event => (
+          {events.map(event => (
             <Card key={event.id} style={styles.eventCard}>
               <Text style={styles.eventTitle}>{event.title}</Text>
               <View style={styles.eventDetails}>
@@ -206,7 +271,7 @@ export default function DashboardScreen() {
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Resumo Financeiro</Text>
-          <TouchableOpacity onPress={() => navigateToModule('finances')}>
+          <TouchableOpacity onPress={() => router.push({ pathname: '/(tabs)/finances', params: { tab: 'cashflow' } })}>
             <Text style={styles.seeAllText}>Ver detalhes</Text>
           </TouchableOpacity>
         </View>
@@ -215,25 +280,70 @@ export default function DashboardScreen() {
           <View style={styles.financeRow}>
             <View style={styles.financeItem}>
               <Text style={styles.financeLabel}>Receitas</Text>
-              <Text style={[styles.financeValue, styles.incomeValue]}>R$ 15.000,00</Text>
+              <Text style={[styles.financeValue, styles.incomeValue]}>{totalIncome.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</Text>
             </View>
             <View style={styles.financeItem}>
               <Text style={styles.financeLabel}>Despesas</Text>
-              <Text style={[styles.financeValue, styles.expenseValue]}>R$ 8.750,00</Text>
+              <Text style={[styles.financeValue, styles.expenseValue]}>{totalExpense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</Text>
             </View>
           </View>
           <View style={styles.financeRow}>
             <View style={styles.financeItem}>
               <Text style={styles.financeLabel}>Balanço</Text>
-              <Text style={[styles.financeValue, styles.balanceValue]}>R$ 6.250,00</Text>
+              <Text style={[styles.financeValue, styles.balanceValue]}>{balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</Text>
             </View>
-          </View>
-          <View style={styles.chartPlaceholder}>
-            <BarChart size={24} color={Colors.text.secondary} />
-            <Text style={styles.chartPlaceholderText}>Gráfico de Fluxo de Caixa</Text>
           </View>
         </Card>
       </View>
+
+      {/* Modal para adicionar evento */}
+      {showAddEventModal && (
+        <Modal
+          visible={showAddEventModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowAddEventModal(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ backgroundColor: Colors.white, borderRadius: 12, padding: 24, width: '90%', maxWidth: 400 }}>
+              <Text style={{ fontFamily: FontFamily.bold, fontSize: 18, marginBottom: 16 }}>Novo Evento</Text>
+              <TextInput
+                placeholder="Título do evento"
+                value={newEvent.title}
+                onChangeText={text => setNewEvent({ ...newEvent, title: text })}
+                style={{ borderWidth: 1, borderColor: Colors.grey[300], borderRadius: 8, padding: 8, marginBottom: 12 }}
+              />
+              <TextInput
+                placeholder="Data (DD/MM/AAAA)"
+                value={newEvent.date}
+                onChangeText={text => setNewEvent({ ...newEvent, date: text })}
+                style={{ borderWidth: 1, borderColor: Colors.grey[300], borderRadius: 8, padding: 8, marginBottom: 12 }}
+              />
+              <TextInput
+                placeholder="Horário (ex: 14:00)"
+                value={newEvent.time}
+                onChangeText={text => setNewEvent({ ...newEvent, time: text })}
+                style={{ borderWidth: 1, borderColor: Colors.grey[300], borderRadius: 8, padding: 8, marginBottom: 16 }}
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
+                <TouchableOpacity onPress={() => setShowAddEventModal(false)}>
+                  <Text style={{ color: Colors.error.main, fontFamily: FontFamily.medium, fontSize: 16 }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (!newEvent.title || !newEvent.date) return;
+                    setEvents([{ ...newEvent, id: Date.now().toString() }, ...events]);
+                    setNewEvent({ title: '', date: '', time: '' });
+                    setShowAddEventModal(false);
+                  }}
+                >
+                  <Text style={{ color: Colors.primary.main, fontFamily: FontFamily.bold, fontSize: 16 }}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </ScrollView>
   );
 }
@@ -309,6 +419,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: Spacing.s,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   sectionTitle: {
     fontFamily: FontFamily.bold,
@@ -319,6 +431,11 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.medium,
     fontSize: 14,
     color: Colors.primary.main,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    overflow: 'hidden',
+    textAlign: 'right',
   },
   notificationCard: {
     marginBottom: Spacing.s,
@@ -442,19 +559,5 @@ const styles = StyleSheet.create({
   },
   balanceValue: {
     color: Colors.accent.main,
-  },
-  chartPlaceholder: {
-    height: 100,
-    backgroundColor: Colors.grey[100],
-    borderRadius: BorderRadius.s,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: Spacing.m,
-  },
-  chartPlaceholderText: {
-    fontFamily: FontFamily.regular,
-    fontSize: 14,
-    color: Colors.text.secondary,
-    marginTop: Spacing.xs,
   },
 });
